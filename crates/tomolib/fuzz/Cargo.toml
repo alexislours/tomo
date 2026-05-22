@@ -1,0 +1,84 @@
+[workspace]
+
+[package]
+name = "tomolib-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tomolib = { path = ".." }
+
+[[bin]]
+name = "ainb"
+path = "fuzz_targets/ainb.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bars"
+path = "fuzz_targets/bars.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bntx"
+path = "fuzz_targets/bntx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bwav"
+path = "fuzz_targets/bwav.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "byml"
+path = "fuzz_targets/byml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "msbp"
+path = "fuzz_targets/msbp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "msbt"
+path = "fuzz_targets/msbt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rstbl"
+path = "fuzz_targets/rstbl.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sarc"
+path = "fuzz_targets/sarc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zs"
+path = "fuzz_targets/zs.rs"
+test = false
+doc = false
+bench = false

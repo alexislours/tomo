@@ -1,0 +1,36 @@
+[package]
+name = "tomolib"
+description = "Library for reading, modifying, and extracting Tomodachi Life data formats."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+zstd.workspace = true
+saphyr.workspace = true
+base64.workspace = true
+ryu.workspace = true
+png = { workspace = true, optional = true }
+texture2ddecoder = { workspace = true, optional = true }
+squish = { workspace = true, optional = true }
+ctt-astcenc = { workspace = true, optional = true }
+intel_tex_2 = { workspace = true, optional = true }
+
+[features]
+default = ["image"]
+# Texture decode/encode (PNG + block codecs). Pulls in image crates; the
+# container parser/writer works without it.
+image = ["dep:png", "dep:texture2ddecoder", "dep:squish"]
+# ASTC/BC4/BC5/BC7 PNG re-encode via vendored C/C++ encoders (astcenc, ISPC).
+image-encode-gpu = ["image", "dep:ctt-astcenc", "dep:intel_tex_2"]
+
+[lints]
+workspace = true

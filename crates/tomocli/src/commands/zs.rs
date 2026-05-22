@@ -1,0 +1,132 @@
+use std::fs::{self, File};
+use std::io::{BufReader, BufWriter};
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result};
+use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
+use tabled::builder::Builder;
+
+use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, value};
+use crate::paths::{append_ext, strip_ext};
+
+#[derive(Debug, Args)]
+pub(crate) struct ZsArgs {
+    #[command(subcommand)]
+    verb: Verb,
+}
+
+#[derive(Debug, Subcommand)]
+enum Verb {
+    /// Print a summary of a .zs (zstd) file.
+    Info {
+        /// Path to the .zs file to inspect.
+        input: PathBuf,
+    },
+    /// Decompress a .zs file.
+    Extract {
+        /// Path to the .zs file to decompress.
+        input: PathBuf,
+        /// Destination path. Defaults to <input> with the `.zs` suffix stripped.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Compress a file into a .zs (zstd) frame.
+    Pack {
+        /// Path to the file to compress.
+        input: PathBuf,
+        /// Destination path. Defaults to <input> with `.zs` appended.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+        /// Compression level (1..=22). Default to level 9.
+        #[arg(short, long, default_value_t = tomolib::formats::zs::DEFAULT_LEVEL)]
+        level: i32,
+    },
+}
+
+pub(crate) fn run(args: ZsArgs) -> Result<()> {
+    match args.verb {
+        Verb::Info { input } => info(&input),
+        Verb::Extract { input, out } => extract(&input, out),
+        Verb::Pack { input, out, level } => pack(&input, out, level),
+    }
+}
+
+fn info(input: &Path) -> Result<()> {
+    let meta = fs::metadata(input).with_context(|| format!("stat `{}`", input.display()))?;
+    let file = File::open(input).with_context(|| format!("open `{}`", input.display()))?;
+    let info = tomolib::formats::zs::info(BufReader::new(file), meta.len())
+        .with_context(|| format!("inspect `{}`", input.display()))?;
+
+    let size = |n: u64| value(fmt_bytes(n));
+
+    let mut t = Builder::default();
+    t.push_record([
+        label("Compressed"),
+        size(info.compressed_size),
+        extra_bytes(info.compressed_size),
+    ]);
+    match info.decompressed_size {
+        Some(n) => {
+            t.push_record([label("Decompressed"), size(n), extra_bytes(n)]);
+            if info.compressed_size > 0 && n > 0 {
+                #[allow(clippy::cast_precision_loss)]
+                let (n_f, c_f) = (n as f64, info.compressed_size as f64);
+                let ratio = n_f / c_f;
+                let saved = (1.0 - c_f / n_f) * 100.0;
+                t.push_record([
+                    label("Ratio"),
+                    value(format!("{ratio:.3} ×")),
+                    format!("saved {saved:.2}%").green().to_string(),
+                ]);
+            }
+        }
+        None => t.push_record([
+            label("Decompressed"),
+            "unknown".to_string(),
+            "not stored in frame header".dimmed().to_string(),
+        ]),
+    }
+
+    println!();
+    println!("  {}", input.display().bold());
+    println!();
+    println!("{}", finish_info_table(t));
+    Ok(())
+}
+
+fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
+    let out = match out {
+        Some(p) => p,
+        None => strip_ext(input, &["zs", "szs"])?,
+    };
+    let reader =
+        BufReader::new(File::open(input).with_context(|| format!("open `{}`", input.display()))?);
+    let writer =
+        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let n = tomolib::formats::zs::decompress(reader, writer)
+        .with_context(|| format!("decompress `{}`", input.display()))?;
+    println!(
+        "extracted {} -> {} ({n} bytes)",
+        input.display(),
+        out.display()
+    );
+    Ok(())
+}
+
+fn pack(input: &Path, out: Option<PathBuf>, level: i32) -> Result<()> {
+    let out = out.unwrap_or_else(|| append_ext(input, "zs"));
+    let meta = fs::metadata(input).with_context(|| format!("stat `{}`", input.display()))?;
+    let reader =
+        BufReader::new(File::open(input).with_context(|| format!("open `{}`", input.display()))?);
+    let writer =
+        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let n = tomolib::formats::zs::compress(reader, writer, level, Some(meta.len()))
+        .with_context(|| format!("compress `{}`", input.display()))?;
+    println!(
+        "packed {} -> {} ({n} bytes in, level {level})",
+        input.display(),
+        out.display()
+    );
+    Ok(())
+}

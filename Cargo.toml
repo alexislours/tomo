@@ -1,0 +1,53 @@
+[workspace]
+resolver = "3"
+members = ["crates/tomolib", "crates/tomocli"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.90"
+license = "GPL-3.0-or-later"
+authors = ["Alexis LOURS"]
+repository = "https://github.com/alexislours/tomo"
+homepage = "https://github.com/alexislours/tomo"
+readme = "README.md"
+keywords = ["tomodachi-life", "nintendo", "switch", "modding"]
+categories = ["command-line-utilities", "parser-implementations", "encoding"]
+
+[workspace.dependencies]
+tomolib = { path = "crates/tomolib", version = "1.0.0" }
+
+thiserror = "2.0.18"
+anyhow = "1.0.102"
+png = "0.18.1"
+texture2ddecoder = "0.1.2"
+squish = "1"
+ctt-astcenc = "0.4"
+intel_tex_2 = "0.5"
+clap = { version = "4.6.1", features = ["derive", "wrap_help"] }
+zstd = "0.13.3"
+tabled = { version = "0.20", features = ["ansi"] }
+owo-colors = { version = "4.3.0", features = ["supports-colors"] }
+rayon = "1.12.0"
+indicatif = "0.18.4"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.150", features = ["preserve_order"] }
+saphyr = "0.0.6"
+base64 = "0.22.1"
+ryu = "1.0.23"
+itoa = "1.0.18"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

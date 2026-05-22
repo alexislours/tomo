@@ -1,0 +1,15 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Game files
+samples/

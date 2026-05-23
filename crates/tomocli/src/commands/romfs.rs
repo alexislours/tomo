@@ -612,10 +612,11 @@ mod tests {
         use clap::CommandFactory;
 
         let outer_containers: HashSet<&str> = ["romfs", "nsp", "nca"].into_iter().collect();
+        let non_format: HashSet<&str> = ["completions"].into_iter().collect();
         let kinds: HashSet<&str> = Kind::value_variants().iter().map(|k| k.name()).collect();
         for sub in crate::Cli::command().get_subcommands() {
             let name = sub.get_name();
-            if outer_containers.contains(name) {
+            if outer_containers.contains(name) || non_format.contains(name) {
                 continue;
             }
             assert!(

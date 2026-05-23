@@ -1,5 +1,3 @@
-#![allow(clippy::unnecessary_wraps)]
-
 use crate::formats::bntx::format::ChannelFormat;
 use crate::formats::bntx::image::RgbaImage;
 use crate::{Error, Result};
@@ -35,7 +33,7 @@ pub(crate) fn encode_astc(img: &RgbaImage, ch: ChannelFormat, srgb: bool) -> Res
     Ok(out)
 }
 
-pub(crate) fn encode_bc4(img: &RgbaImage) -> Result<Vec<u8>> {
+pub(crate) fn encode_bc4(img: &RgbaImage) -> Vec<u8> {
     let r: Vec<u8> = img.data.chunks_exact(4).map(|p| p[0]).collect();
     let surf = intel_tex_2::RSurface {
         width: img.width,
@@ -43,10 +41,10 @@ pub(crate) fn encode_bc4(img: &RgbaImage) -> Result<Vec<u8>> {
         stride: img.width,
         data: &r,
     };
-    Ok(intel_tex_2::bc4::compress_blocks(&surf))
+    intel_tex_2::bc4::compress_blocks(&surf)
 }
 
-pub(crate) fn encode_bc5(img: &RgbaImage) -> Result<Vec<u8>> {
+pub(crate) fn encode_bc5(img: &RgbaImage) -> Vec<u8> {
     let rg: Vec<u8> = img
         .data
         .chunks_exact(4)
@@ -58,18 +56,15 @@ pub(crate) fn encode_bc5(img: &RgbaImage) -> Result<Vec<u8>> {
         stride: img.width * 2,
         data: &rg,
     };
-    Ok(intel_tex_2::bc5::compress_blocks(&surf))
+    intel_tex_2::bc5::compress_blocks(&surf)
 }
 
-pub(crate) fn encode_bc7(img: &RgbaImage) -> Result<Vec<u8>> {
+pub(crate) fn encode_bc7(img: &RgbaImage) -> Vec<u8> {
     let surf = intel_tex_2::RgbaSurface {
         width: img.width,
         height: img.height,
         stride: img.width * 4,
         data: &img.data,
     };
-    Ok(intel_tex_2::bc7::compress_blocks(
-        &intel_tex_2::bc7::alpha_basic_settings(),
-        &surf,
-    ))
+    intel_tex_2::bc7::compress_blocks(&intel_tex_2::bc7::alpha_basic_settings(), &surf)
 }

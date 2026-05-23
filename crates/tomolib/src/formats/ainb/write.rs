@@ -37,16 +37,14 @@ impl Writer {
     fn u16(&mut self, v: u16) {
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
-    #[allow(clippy::cast_sign_loss)]
     fn s16(&mut self, v: i16) {
-        self.u16(v as u16);
+        self.u16(v.cast_unsigned());
     }
     fn u32(&mut self, v: u32) {
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
-    #[allow(clippy::cast_sign_loss)]
     fn s32(&mut self, v: i32) {
-        self.u32(v as u32);
+        self.u32(v.cast_unsigned());
     }
     fn f32(&mut self, v: f32) {
         self.u32(v.to_bits());
@@ -78,21 +76,20 @@ impl Writer {
             self.buf.push(0);
         }
     }
-    #[allow(clippy::many_single_char_names)]
     fn guid(&mut self, g: &str) {
         let parts: Vec<&str> = g.split('-').collect();
-        let a = u32::from_str_radix(parts.first().copied().unwrap_or("0"), 16).unwrap_or(0);
-        let b = u16::from_str_radix(parts.get(1).copied().unwrap_or("0"), 16).unwrap_or(0);
-        let c = u16::from_str_radix(parts.get(2).copied().unwrap_or("0"), 16).unwrap_or(0);
-        let d = parts.get(3).copied().unwrap_or("0000");
-        let e = parts.get(4).copied().unwrap_or("000000000000");
-        self.u32(a);
-        self.u16(b);
-        self.u16(c);
-        self.u8(u8::from_str_radix(d.get(0..2).unwrap_or("0"), 16).unwrap_or(0));
-        self.u8(u8::from_str_radix(d.get(2..4).unwrap_or("0"), 16).unwrap_or(0));
+        let time_low = u32::from_str_radix(parts.first().copied().unwrap_or("0"), 16).unwrap_or(0);
+        let time_mid = u16::from_str_radix(parts.get(1).copied().unwrap_or("0"), 16).unwrap_or(0);
+        let time_hi = u16::from_str_radix(parts.get(2).copied().unwrap_or("0"), 16).unwrap_or(0);
+        let clock_seq = parts.get(3).copied().unwrap_or("0000");
+        let node = parts.get(4).copied().unwrap_or("000000000000");
+        self.u32(time_low);
+        self.u16(time_mid);
+        self.u16(time_hi);
+        self.u8(u8::from_str_radix(clock_seq.get(0..2).unwrap_or("0"), 16).unwrap_or(0));
+        self.u8(u8::from_str_radix(clock_seq.get(2..4).unwrap_or("0"), 16).unwrap_or(0));
         for i in 0..6 {
-            self.u8(u8::from_str_radix(e.get(i * 2..i * 2 + 2).unwrap_or("0"), 16).unwrap_or(0));
+            self.u8(u8::from_str_radix(node.get(i * 2..i * 2 + 2).unwrap_or("0"), 16).unwrap_or(0));
         }
     }
 }
@@ -148,14 +145,12 @@ struct Ctx {
     params: ParamSet,
 }
 
-#[allow(clippy::too_many_lines)]
 fn build_context(ainb: &Ainb) -> Ctx {
     let mut ctx = Ctx {
         version: ainb.version,
         ..Ctx::default()
     };
     let node_size = if ainb.version > 0x404 { 0x3c } else { 0x38 };
-    let attachment_size = if ainb.version > 0x404 { 0x10 } else { 0xc };
     ctx.command_count = u32::try_from(ainb.commands.len()).unwrap_or(0);
     ctx.node_count = u32::try_from(ainb.nodes.len()).unwrap_or(0);
     ctx.output_count =
@@ -164,6 +159,22 @@ fn build_context(ainb: &Ainb) -> Ctx {
         u32::try_from(ainb.nodes.iter().filter(|n| n.is_query()).count()).unwrap_or(0);
     ctx.blackboard_offset = 0x74 + 0x18 * ainb.commands.len() + node_size * ainb.nodes.len();
 
+    let query_map = build_query_map(ainb);
+
+    let bb_header_size = if ainb.version >= 0x408 { 0x38 } else { 0x30 };
+    let bb_size = ainb
+        .blackboard
+        .as_ref()
+        .map_or(0, |bb| blackboard_size(bb, ainb.version));
+    let start = ctx.blackboard_offset + bb_header_size + bb_size;
+
+    let curr_node_param_offset = accumulate_nodes(&mut ctx, ainb, &query_map, start);
+    compute_offsets(&mut ctx, ainb, curr_node_param_offset);
+
+    ctx
+}
+
+fn build_query_map(ainb: &Ainb) -> HashMap<usize, u16> {
     let mut query_map: HashMap<usize, u16> = HashMap::new();
     let mut curr_query = 0u16;
     for (i, node) in ainb.nodes.iter().enumerate() {
@@ -172,14 +183,16 @@ fn build_context(ainb: &Ainb) -> Ctx {
             curr_query += 1;
         }
     }
+    query_map
+}
 
-    let bb_header_size = if ainb.version >= 0x408 { 0x38 } else { 0x30 };
-    let bb_size = ainb
-        .blackboard
-        .as_ref()
-        .map_or(0, |bb| blackboard_size(bb, ainb.version));
-    let mut curr_node_param_offset = ctx.blackboard_offset + bb_header_size + bb_size;
-
+fn accumulate_nodes(
+    ctx: &mut Ctx,
+    ainb: &Ainb,
+    query_map: &HashMap<usize, u16>,
+    start: usize,
+) -> usize {
+    let mut curr_node_param_offset = start;
     let mut curr_attachment_index = 0u32;
     let mut curr_query_index = 0u16;
     for node in &ainb.nodes {
@@ -260,6 +273,11 @@ fn build_context(ainb: &Ainb) -> Ctx {
         }
     }
 
+    curr_node_param_offset
+}
+
+fn compute_offsets(ctx: &mut Ctx, ainb: &Ainb, curr_node_param_offset: usize) {
+    let attachment_size = if ainb.version > 0x404 { 0x10 } else { 0xc };
     ctx.attachment_count = u32::try_from(ctx.attachments.len()).unwrap_or(0);
     ctx.attachment_index_offset = curr_node_param_offset;
     ctx.attachment_offset = ctx.attachment_index_offset + 4 * ctx.attachment_indices.len();
@@ -335,11 +353,8 @@ fn build_context(ainb: &Ainb) -> Ctx {
         }
     }
     ctx.string_pool_offset = ctx.enum_resolve_offset + 4;
-
-    ctx
 }
 
-#[allow(clippy::too_many_lines)]
 pub(super) fn write(ainb: &Ainb) -> Vec<u8> {
     let ctx = build_context(ainb);
     let mut w = Writer::new();
@@ -382,22 +397,7 @@ pub(super) fn write(ainb: &Ainb) -> Vec<u8> {
         w.u32(u32::try_from(i).unwrap_or(0));
     }
 
-    let attach_size = if ainb.version > 0x404 { 0x10 } else { 0xc };
-    let mut param_offset = w.tell() + attach_size * ctx.attachments.len();
-    for (i, attachment) in ctx.attachments.iter().enumerate() {
-        w.string_off(&attachment.name);
-        w.u32(u32::try_from(param_offset).unwrap_or(0));
-        w.u16(ctx.attachment_expression_counts[i]);
-        w.u16(ctx.attachment_expression_sizes[i]);
-        if ainb.version > 0x404 {
-            w.u32(calc_hash(&attachment.name));
-        }
-        param_offset += 0x64;
-    }
-
-    for attachment in &ctx.attachments {
-        write_attachment_params(&mut w, attachment, &mut prop_indices);
-    }
+    write_attachments(&mut w, ainb, &ctx, &mut prop_indices);
 
     write_property_set(&mut w, &ctx.props);
     write_param_set(&mut w, &ctx.params, &ctx.multi_params);
@@ -408,21 +408,7 @@ pub(super) fn write(ainb: &Ainb) -> Vec<u8> {
         w.u32(src.flags);
     }
 
-    let mut trans_offset = w.tell() + 4 * ctx.transitions.len();
-    for t in &ctx.transitions {
-        w.u32(u32::try_from(trans_offset).unwrap_or(0));
-        trans_offset += if t.transition_type == 0 { 8 } else { 4 };
-    }
-    for t in &ctx.transitions {
-        if t.update_post_calc {
-            w.u32(t.transition_type | 0x8000_0000);
-        } else {
-            w.u32(t.transition_type);
-        }
-        if t.transition_type == 0 {
-            w.string_off(&t.command_name);
-        }
-    }
+    write_transitions(&mut w, &ctx);
 
     for &q in &ctx.queries {
         w.u16(q);
@@ -457,62 +443,8 @@ pub(super) fn write(ainb: &Ainb) -> Vec<u8> {
         w.u32(unk.unk0c);
     }
 
-    if ainb.version < 0x407 {
-        for node in &ainb.nodes {
-            if let Some(s) = &node.state_info {
-                w.string_off(&s.desired_state);
-                w.u32(s.unk04);
-                w.u32(s.unk08);
-                w.u32(s.unk0c);
-                w.u32(s.unk10);
-            } else {
-                w.u32(0);
-                w.u32(0);
-                w.u32(0);
-                w.u32(0);
-                w.u32(0);
-            }
-        }
-    }
-
-    if ainb.version > 0x404 {
-        w.u16(0);
-        w.u16(u16::try_from(ainb.replacement_table.len()).unwrap_or(0));
-        let mut exist_node = false;
-        let mut exist_attach = false;
-        let mut new_attach = i32::try_from(ctx.attachment_count).unwrap_or(0);
-        let mut new_node = i32::try_from(ctx.node_count).unwrap_or(0);
-        for rep in &ainb.replacement_table {
-            if rep.rtype == ReplacementType::RemoveAttachment {
-                exist_attach = true;
-                new_attach -= 1;
-            } else {
-                exist_node = true;
-                new_node -= if rep.rtype == ReplacementType::RemoveChild {
-                    1
-                } else {
-                    2
-                };
-            }
-        }
-        w.s16(if exist_node {
-            i16::try_from(new_node).unwrap_or(-1)
-        } else {
-            -1
-        });
-        w.s16(if exist_attach {
-            i16::try_from(new_attach).unwrap_or(-1)
-        } else {
-            -1
-        });
-        for rep in &ainb.replacement_table {
-            w.u8(u8::try_from(rep.rtype.value() & 0xff).unwrap_or(0));
-            w.u8(0);
-            w.s16(i16::try_from(rep.node_index).unwrap_or(0));
-            w.s16(i16::try_from(rep.replace_index).unwrap_or(0));
-            w.s16(i16::try_from(rep.new_index).unwrap_or(0));
-        }
-    }
+    write_node_states(&mut w, ainb);
+    write_replacement_table(&mut w, ainb, &ctx);
 
     if ainb.exists_section_0x6c {
         w.u32(0);
@@ -523,7 +455,105 @@ pub(super) fn write(ainb: &Ainb) -> Vec<u8> {
     w.buf
 }
 
-#[allow(clippy::too_many_lines)]
+fn write_attachments(w: &mut Writer, ainb: &Ainb, ctx: &Ctx, prop_indices: &mut [u32; 6]) {
+    let attach_size = if ainb.version > 0x404 { 0x10 } else { 0xc };
+    let mut param_offset = w.tell() + attach_size * ctx.attachments.len();
+    for (i, attachment) in ctx.attachments.iter().enumerate() {
+        w.string_off(&attachment.name);
+        w.u32(u32::try_from(param_offset).unwrap_or(0));
+        w.u16(ctx.attachment_expression_counts[i]);
+        w.u16(ctx.attachment_expression_sizes[i]);
+        if ainb.version > 0x404 {
+            w.u32(calc_hash(&attachment.name));
+        }
+        param_offset += 0x64;
+    }
+    for attachment in &ctx.attachments {
+        write_attachment_params(w, attachment, prop_indices);
+    }
+}
+
+fn write_transitions(w: &mut Writer, ctx: &Ctx) {
+    let mut trans_offset = w.tell() + 4 * ctx.transitions.len();
+    for t in &ctx.transitions {
+        w.u32(u32::try_from(trans_offset).unwrap_or(0));
+        trans_offset += if t.transition_type == 0 { 8 } else { 4 };
+    }
+    for t in &ctx.transitions {
+        if t.update_post_calc {
+            w.u32(t.transition_type | 0x8000_0000);
+        } else {
+            w.u32(t.transition_type);
+        }
+        if t.transition_type == 0 {
+            w.string_off(&t.command_name);
+        }
+    }
+}
+
+fn write_node_states(w: &mut Writer, ainb: &Ainb) {
+    if ainb.version >= 0x407 {
+        return;
+    }
+    for node in &ainb.nodes {
+        if let Some(s) = &node.state_info {
+            w.string_off(&s.desired_state);
+            w.u32(s.unk04);
+            w.u32(s.unk08);
+            w.u32(s.unk0c);
+            w.u32(s.unk10);
+        } else {
+            w.u32(0);
+            w.u32(0);
+            w.u32(0);
+            w.u32(0);
+            w.u32(0);
+        }
+    }
+}
+
+fn write_replacement_table(w: &mut Writer, ainb: &Ainb, ctx: &Ctx) {
+    if ainb.version <= 0x404 {
+        return;
+    }
+    w.u16(0);
+    w.u16(u16::try_from(ainb.replacement_table.len()).unwrap_or(0));
+    let mut exist_node = false;
+    let mut exist_attach = false;
+    let mut new_attach = i32::try_from(ctx.attachment_count).unwrap_or(0);
+    let mut new_node = i32::try_from(ctx.node_count).unwrap_or(0);
+    for rep in &ainb.replacement_table {
+        if rep.rtype == ReplacementType::RemoveAttachment {
+            exist_attach = true;
+            new_attach -= 1;
+        } else {
+            exist_node = true;
+            new_node -= if rep.rtype == ReplacementType::RemoveChild {
+                1
+            } else {
+                2
+            };
+        }
+    }
+    w.s16(if exist_node {
+        i16::try_from(new_node).unwrap_or(-1)
+    } else {
+        -1
+    });
+    w.s16(if exist_attach {
+        i16::try_from(new_attach).unwrap_or(-1)
+    } else {
+        -1
+    });
+    for rep in &ainb.replacement_table {
+        w.u8(u8::try_from(rep.rtype.value() & 0xff).unwrap_or(0));
+        w.u8(0);
+        w.s16(i16::try_from(rep.node_index).unwrap_or(0));
+        w.s16(i16::try_from(rep.replace_index).unwrap_or(0));
+        w.s16(i16::try_from(rep.new_index).unwrap_or(0));
+    }
+}
+
 fn write_header(w: &mut Writer, ainb: &Ainb, ctx: &Ctx) {
     w.bytes(b"AIB ");
     w.u32(ainb.version);
@@ -634,7 +664,26 @@ fn write_node_params(
     }
 }
 
-#[allow(clippy::too_many_lines)]
+fn write_bb_index(w: &mut Writer, blackboard_index: i32) {
+    if blackboard_index == -1 {
+        w.u32(0);
+    } else {
+        w.s16(i16::try_from(blackboard_index).unwrap_or(0));
+        w.u16(0x8000);
+    }
+}
+
+fn write_bb_cond_f32(w: &mut Writer, blackboard_index: i32, condition: f32) {
+    if blackboard_index == -1 {
+        w.u32(0);
+        w.f32(condition);
+    } else {
+        w.s16(i16::try_from(blackboard_index).unwrap_or(0));
+        w.u16(0x8000);
+        w.u32(0);
+    }
+}
+
 fn write_plug(w: &mut Writer, plug: &Plug, transitions: &[Transition]) {
     match plug {
         Plug::Generic { node_index, name } | Plug::Child { node_index, name } => {
@@ -662,109 +711,6 @@ fn write_plug(w: &mut Writer, plug: &Plug, transitions: &[Transition]) {
             w.string_off(name);
             w.u32(*unk0);
             w.f32(*unk1);
-        }
-        Plug::S32Selector {
-            node_index,
-            name,
-            condition,
-            is_default,
-            blackboard_index,
-        } => {
-            w.s32(*node_index);
-            w.string_off(name);
-            if *blackboard_index == -1 {
-                w.u32(0);
-            } else {
-                w.s16(i16::try_from(*blackboard_index).unwrap_or(0));
-                w.u16(0x8000);
-            }
-            if *is_default {
-                w.u32(0);
-            } else {
-                w.s32(*condition);
-            }
-        }
-        Plug::F32Selector {
-            node_index,
-            name,
-            condition_min,
-            blackboard_index_min,
-            condition_max,
-            blackboard_index_max,
-            is_default,
-        } => {
-            w.s32(*node_index);
-            w.string_off(name);
-            if *is_default {
-                w.bytes(&[0u8; 0x20]);
-            } else {
-                if *blackboard_index_min == -1 {
-                    w.u32(0);
-                    w.f32(*condition_min);
-                } else {
-                    w.s16(i16::try_from(*blackboard_index_min).unwrap_or(0));
-                    w.u16(0x8000);
-                    w.u32(0);
-                }
-                if *blackboard_index_max == -1 {
-                    w.u32(0);
-                    w.f32(*condition_max);
-                } else {
-                    w.s16(i16::try_from(*blackboard_index_max).unwrap_or(0));
-                    w.u16(0x8000);
-                    w.u32(0);
-                }
-                w.bytes(&[0u8; 0x10]);
-            }
-        }
-        Plug::StringSelector {
-            node_index,
-            name,
-            condition,
-            is_default: _,
-            blackboard_index,
-        } => {
-            w.s32(*node_index);
-            w.string_off(name);
-            if *blackboard_index == -1 {
-                w.u32(0);
-            } else {
-                w.s16(i16::try_from(*blackboard_index).unwrap_or(0));
-                w.u16(0x8000);
-            }
-            w.string_off(condition);
-        }
-        Plug::RandomSelector {
-            node_index,
-            name,
-            blackboard_index,
-            weight,
-        } => {
-            w.s32(*node_index);
-            w.string_off(name);
-            if *blackboard_index == -1 {
-                w.u32(0);
-            } else {
-                w.s16(i16::try_from(*blackboard_index).unwrap_or(0));
-                w.u16(0x8000);
-            }
-            w.f32(*weight);
-        }
-        Plug::BsaSelectorUpdater {
-            node_index,
-            name,
-            child_enum_bb_index,
-            child_enum_value,
-        } => {
-            w.s32(*node_index);
-            w.string_off(name);
-            if *child_enum_bb_index < 0 {
-                w.u32(0);
-                w.u32(*child_enum_value);
-            } else {
-                w.u32(u32::try_from(*child_enum_bb_index).unwrap_or(0) | 0x8000_0000);
-                w.u32(0);
-            }
         }
         Plug::Transition {
             node_index,
@@ -805,6 +751,87 @@ fn write_plug(w: &mut Writer, plug: &Plug, transitions: &[Transition]) {
                 w.s32(*default_value);
             }
         }
+        other => write_selector_plug(w, other),
+    }
+}
+
+fn write_selector_plug(w: &mut Writer, plug: &Plug) {
+    match plug {
+        Plug::S32Selector {
+            node_index,
+            name,
+            condition,
+            is_default,
+            blackboard_index,
+        } => {
+            w.s32(*node_index);
+            w.string_off(name);
+            write_bb_index(w, *blackboard_index);
+            if *is_default {
+                w.u32(0);
+            } else {
+                w.s32(*condition);
+            }
+        }
+        Plug::F32Selector {
+            node_index,
+            name,
+            condition_min,
+            blackboard_index_min,
+            condition_max,
+            blackboard_index_max,
+            is_default,
+        } => {
+            w.s32(*node_index);
+            w.string_off(name);
+            if *is_default {
+                w.bytes(&[0u8; 0x20]);
+            } else {
+                write_bb_cond_f32(w, *blackboard_index_min, *condition_min);
+                write_bb_cond_f32(w, *blackboard_index_max, *condition_max);
+                w.bytes(&[0u8; 0x10]);
+            }
+        }
+        Plug::StringSelector {
+            node_index,
+            name,
+            condition,
+            is_default: _,
+            blackboard_index,
+        } => {
+            w.s32(*node_index);
+            w.string_off(name);
+            write_bb_index(w, *blackboard_index);
+            w.string_off(condition);
+        }
+        Plug::RandomSelector {
+            node_index,
+            name,
+            blackboard_index,
+            weight,
+        } => {
+            w.s32(*node_index);
+            w.string_off(name);
+            write_bb_index(w, *blackboard_index);
+            w.f32(*weight);
+        }
+        Plug::BsaSelectorUpdater {
+            node_index,
+            name,
+            child_enum_bb_index,
+            child_enum_value,
+        } => {
+            w.s32(*node_index);
+            w.string_off(name);
+            if *child_enum_bb_index < 0 {
+                w.u32(0);
+                w.u32(*child_enum_value);
+            } else {
+                w.u32(u32::try_from(*child_enum_bb_index).unwrap_or(0) | 0x8000_0000);
+                w.u32(0);
+            }
+        }
+        _ => unreachable!(),
     }
 }
 

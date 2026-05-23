@@ -258,9 +258,9 @@ fn encode_blocks(ch: ChannelFormat, img: &RgbaImage, srgb: bool) -> Result<Vec<u
             return encode_gpu::encode_astc(img, ch, srgb);
         }
         match ch {
-            ChannelFormat::Bc4 => return encode_gpu::encode_bc4(img),
-            ChannelFormat::Bc5 => return encode_gpu::encode_bc5(img),
-            ChannelFormat::Bc7U => return encode_gpu::encode_bc7(img),
+            ChannelFormat::Bc4 => return Ok(encode_gpu::encode_bc4(img)),
+            ChannelFormat::Bc5 => return Ok(encode_gpu::encode_bc5(img)),
+            ChannelFormat::Bc7U => return Ok(encode_gpu::encode_bc7(img)),
             _ => {}
         }
     }

@@ -254,11 +254,11 @@ fn print_convert_report(ctx: &ProcessCtx) {
         let nanos = (stat.nanos / workers).max(1);
         let out_per_sec = u128::from(stat.output_bytes).saturating_mul(1_000_000_000) / nanos;
         let out_per_sec = u64::try_from(out_per_sec).unwrap_or(u64::MAX);
-        #[allow(clippy::cast_precision_loss)]
-        let files_per_sec = (stat.files as f64) * 1e9 / (nanos as f64);
+        let fps_deci = (u128::from(stat.files) * 10_000_000_000 + nanos / 2) / nanos;
+        let files_per_sec = format!("{}.{}", fps_deci / 10, fps_deci % 10);
         let dur = Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX));
         println!(
-            "  {}: {} files, {} in -> {} out in {:.2?} ({}/s out, {:.1} files/s)",
+            "  {}: {} files, {} in -> {} out in {:.2?} ({}/s out, {} files/s)",
             kind.name(),
             stat.files,
             fmt_bytes(stat.input_bytes),

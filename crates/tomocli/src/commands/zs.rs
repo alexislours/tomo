@@ -81,14 +81,23 @@ fn info(input: &Path, json: bool) -> Result<()> {
         Some(n) => {
             t.push_record([label("Decompressed"), size(n), extra_bytes(n)]);
             if info.compressed_size > 0 && n > 0 {
-                #[allow(clippy::cast_precision_loss)]
-                let (n_f, c_f) = (n as f64, info.compressed_size as f64);
-                let ratio = n_f / c_f;
-                let saved = (1.0 - c_f / n_f) * 100.0;
+                let nd = u128::from(n);
+                let cd = u128::from(info.compressed_size);
+                let ratio_milli = (nd * 1000 + cd / 2) / cd;
+                let saved_centi =
+                    (i128::from(n) - i128::from(info.compressed_size)) * 10_000 / i128::from(n);
+                let sign = if saved_centi < 0 { "-" } else { "" };
+                let saved_abs = saved_centi.unsigned_abs();
                 t.push_record([
                     label("Ratio"),
-                    value(format!("{ratio:.3} ×")),
-                    format!("saved {saved:.2}%").green().to_string(),
+                    value(format!(
+                        "{}.{:03} ×",
+                        ratio_milli / 1000,
+                        ratio_milli % 1000
+                    )),
+                    format!("saved {sign}{}.{:02}%", saved_abs / 100, saved_abs % 100)
+                        .green()
+                        .to_string(),
                 ]);
             }
         }

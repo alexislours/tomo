@@ -29,14 +29,14 @@ pub(crate) fn fmt_bytes(n: u64) -> String {
     if n < 1024 {
         return format!("{n} bytes");
     }
-    #[allow(clippy::cast_precision_loss)]
-    let mut v = n as f64;
     let mut idx = 0;
-    while v >= 1024.0 && idx < UNITS.len() - 1 {
-        v /= 1024.0;
+    let mut unit = 1u64;
+    while idx < UNITS.len() - 1 && n / unit >= 1024 {
+        unit *= 1024;
         idx += 1;
     }
-    format!("{v:.2} {}", UNITS[idx])
+    let scaled = (u128::from(n) * 100 + u128::from(unit) / 2) / u128::from(unit);
+    format!("{}.{:02} {}", scaled / 100, scaled % 100, UNITS[idx])
 }
 
 pub(crate) fn with_commas(n: u64) -> String {

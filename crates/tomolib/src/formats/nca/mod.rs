@@ -478,7 +478,6 @@ fn list_pfs<R: Read + Seek>(stream: &mut SectionStream<'_, R>) -> Result<Vec<FsE
         .collect())
 }
 
-#[allow(clippy::large_enum_variant)]
 enum SectionCipher {
     None,
     Ctr { key: [u8; 16], base_ctr: [u8; 16] },

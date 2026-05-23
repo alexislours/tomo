@@ -26,8 +26,7 @@ pub(crate) fn murmur3_x86_32_seed0(bytes: &[u8]) -> u32 {
         h ^= k1;
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    let len_u32 = bytes.len() as u32;
+    let len_u32 = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
     h ^= len_u32;
     h ^= h >> 16;
     h = h.wrapping_mul(0x85EB_CA6B);

@@ -169,9 +169,8 @@ fn param_set_to_y(set: &ParamSet) -> Y {
     ])
 }
 
-#[allow(clippy::too_many_lines)]
 fn plug_to_y(p: &Plug) -> Y {
-    let mut m = Vec::new();
+    let mut m: Vec<(String, Y)> = Vec::new();
     match p {
         Plug::Generic { node_index, name } | Plug::Child { node_index, name } => {
             m.push(("node_index".into(), Y::Int(i64::from(*node_index))));
@@ -198,119 +197,6 @@ fn plug_to_y(p: &Plug) -> Y {
             m.push(("name".into(), Y::Str(name.clone())));
             m.push(("unknown_1".into(), Y::Int(i64::from(*unk0))));
             m.push(("unknown_2".into(), Y::Float(*unk1)));
-        }
-        Plug::S32Selector {
-            node_index,
-            name,
-            condition,
-            is_default,
-            blackboard_index,
-        } => {
-            m.push(("node_index".into(), Y::Int(i64::from(*node_index))));
-            m.push(("name".into(), Y::Str(name.clone())));
-            if *is_default {
-                m.push(("is_default".into(), Y::Bool(true)));
-            } else if *blackboard_index == -1 {
-                m.push(("condition".into(), Y::Int(i64::from(*condition))));
-            } else {
-                m.push((
-                    "blackboard_index".into(),
-                    Y::Int(i64::from(*blackboard_index)),
-                ));
-                m.push(("default_condition".into(), Y::Int(i64::from(*condition))));
-            }
-        }
-        Plug::F32Selector {
-            node_index,
-            name,
-            condition_min,
-            blackboard_index_min,
-            condition_max,
-            blackboard_index_max,
-            is_default,
-        } => {
-            m.push(("node_index".into(), Y::Int(i64::from(*node_index))));
-            m.push(("name".into(), Y::Str(name.clone())));
-            if *is_default {
-                m.push(("is_default".into(), Y::Bool(true)));
-            } else {
-                if *blackboard_index_min == -1 {
-                    m.push(("condition_min".into(), Y::Float(*condition_min)));
-                } else {
-                    m.push((
-                        "condition_min_blackboard_index".into(),
-                        Y::Int(i64::from(*blackboard_index_min)),
-                    ));
-                }
-                if *blackboard_index_max == -1 {
-                    m.push(("condition_max".into(), Y::Float(*condition_max)));
-                } else {
-                    m.push((
-                        "condition_max_blackboard_index".into(),
-                        Y::Int(i64::from(*blackboard_index_max)),
-                    ));
-                }
-            }
-        }
-        Plug::StringSelector {
-            node_index,
-            name,
-            condition,
-            is_default,
-            blackboard_index,
-        } => {
-            m.push(("node_index".into(), Y::Int(i64::from(*node_index))));
-            m.push(("name".into(), Y::Str(name.clone())));
-            if *is_default {
-                m.push(("is_default".into(), Y::Bool(true)));
-                m.push(("condition".into(), Y::Str(condition.clone())));
-            } else if *blackboard_index == -1 {
-                m.push(("condition".into(), Y::Str(condition.clone())));
-            } else {
-                m.push((
-                    "blackboard_index".into(),
-                    Y::Int(i64::from(*blackboard_index)),
-                ));
-                m.push(("default_condition".into(), Y::Str(condition.clone())));
-            }
-        }
-        Plug::RandomSelector {
-            node_index,
-            name,
-            blackboard_index,
-            weight,
-        } => {
-            m.push(("node_index".into(), Y::Int(i64::from(*node_index))));
-            m.push(("name".into(), Y::Str(name.clone())));
-            if *blackboard_index == -1 {
-                m.push(("weight".into(), Y::Float(*weight)));
-            } else {
-                m.push((
-                    "blackboard_index".into(),
-                    Y::Int(i64::from(*blackboard_index)),
-                ));
-                m.push(("default_weight".into(), Y::Float(*weight)));
-            }
-        }
-        Plug::BsaSelectorUpdater {
-            node_index,
-            name,
-            child_enum_bb_index,
-            child_enum_value,
-        } => {
-            m.push(("node_index".into(), Y::Int(i64::from(*node_index))));
-            m.push(("name".into(), Y::Str(name.clone())));
-            if *child_enum_bb_index < 0 {
-                m.push((
-                    "child_enum_value".into(),
-                    Y::Int(i64::from(*child_enum_value)),
-                ));
-            } else {
-                m.push((
-                    "child_enum_bb_index".into(),
-                    Y::Int(i64::from(*child_enum_bb_index)),
-                ));
-            }
         }
         Plug::Transition {
             node_index,
@@ -360,8 +246,111 @@ fn plug_to_y(p: &Plug) -> Y {
                 m.push(("default_value".into(), Y::Int(i64::from(*default_value))));
             }
         }
+        other => selector_plug_to_y(other, &mut m),
     }
     Y::Map(m)
+}
+
+fn push_node_name(m: &mut Vec<(String, Y)>, node_index: i32, name: &str) {
+    m.push(("node_index".into(), Y::Int(i64::from(node_index))));
+    m.push(("name".into(), Y::Str(name.to_owned())));
+}
+
+fn push_int(m: &mut Vec<(String, Y)>, key: &str, v: impl Into<i64>) {
+    m.push((key.into(), Y::Int(v.into())));
+}
+
+fn selector_plug_to_y(p: &Plug, m: &mut Vec<(String, Y)>) {
+    match p {
+        Plug::S32Selector {
+            node_index,
+            name,
+            condition,
+            is_default,
+            blackboard_index,
+        } => {
+            push_node_name(m, *node_index, name);
+            if *is_default {
+                m.push(("is_default".into(), Y::Bool(true)));
+            } else if *blackboard_index == -1 {
+                push_int(m, "condition", *condition);
+            } else {
+                push_int(m, "blackboard_index", *blackboard_index);
+                push_int(m, "default_condition", *condition);
+            }
+        }
+        Plug::F32Selector {
+            node_index,
+            name,
+            condition_min,
+            blackboard_index_min,
+            condition_max,
+            blackboard_index_max,
+            is_default,
+        } => {
+            push_node_name(m, *node_index, name);
+            if *is_default {
+                m.push(("is_default".into(), Y::Bool(true)));
+            } else {
+                if *blackboard_index_min == -1 {
+                    m.push(("condition_min".into(), Y::Float(*condition_min)));
+                } else {
+                    push_int(m, "condition_min_blackboard_index", *blackboard_index_min);
+                }
+                if *blackboard_index_max == -1 {
+                    m.push(("condition_max".into(), Y::Float(*condition_max)));
+                } else {
+                    push_int(m, "condition_max_blackboard_index", *blackboard_index_max);
+                }
+            }
+        }
+        Plug::StringSelector {
+            node_index,
+            name,
+            condition,
+            is_default,
+            blackboard_index,
+        } => {
+            push_node_name(m, *node_index, name);
+            if *is_default {
+                m.push(("is_default".into(), Y::Bool(true)));
+                m.push(("condition".into(), Y::Str(condition.clone())));
+            } else if *blackboard_index == -1 {
+                m.push(("condition".into(), Y::Str(condition.clone())));
+            } else {
+                push_int(m, "blackboard_index", *blackboard_index);
+                m.push(("default_condition".into(), Y::Str(condition.clone())));
+            }
+        }
+        Plug::RandomSelector {
+            node_index,
+            name,
+            blackboard_index,
+            weight,
+        } => {
+            push_node_name(m, *node_index, name);
+            if *blackboard_index == -1 {
+                m.push(("weight".into(), Y::Float(*weight)));
+            } else {
+                push_int(m, "blackboard_index", *blackboard_index);
+                m.push(("default_weight".into(), Y::Float(*weight)));
+            }
+        }
+        Plug::BsaSelectorUpdater {
+            node_index,
+            name,
+            child_enum_bb_index,
+            child_enum_value,
+        } => {
+            push_node_name(m, *node_index, name);
+            if *child_enum_bb_index < 0 {
+                push_int(m, "child_enum_value", *child_enum_value);
+            } else {
+                push_int(m, "child_enum_bb_index", *child_enum_bb_index);
+            }
+        }
+        _ => unreachable!(),
+    }
 }
 
 fn flag_list(node: &Node) -> Y {
@@ -542,8 +531,7 @@ fn replacement_to_y(r: &ReplacementEntry) -> Y {
     Y::Map(m)
 }
 
-#[allow(clippy::unnecessary_wraps)]
-pub(super) fn emit(ainb: &Ainb) -> Result<String> {
+pub(super) fn emit(ainb: &Ainb) -> String {
     let mut top = vec![
         ("version".into(), Y::Int(i64::from(ainb.version))),
         ("filename".into(), Y::Str(ainb.filename.clone())),
@@ -622,7 +610,7 @@ pub(super) fn emit(ainb: &Ainb) -> Result<String> {
 
     let mut out = String::new();
     emit_map(&mut out, &top, 0);
-    Ok(out)
+    out
 }
 
 fn emit_scalar(out: &mut String, y: &Y) {
@@ -782,18 +770,12 @@ fn p_i64_at(m: &Map, key: &str) -> Result<i64> {
     p_i64(req(m, key)?)
 }
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::cast_possible_wrap
-)]
 fn p_i32(y: &Yaml) -> Result<i32> {
-    Ok(p_i64(y)? as i32)
+    i32::try_from(p_i64(y)?).map_err(|_| Error::malformed("AINB YAML: i32 out of range"))
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn p_u32(y: &Yaml) -> Result<u32> {
-    Ok(p_i64(y)? as u32)
+    u32::try_from(p_i64(y)?).map_err(|_| Error::malformed("AINB YAML: u32 out of range"))
 }
 
 fn p_i32_at(m: &Map, key: &str) -> Result<i32> {
@@ -804,14 +786,12 @@ fn p_u32_at(m: &Map, key: &str) -> Result<u32> {
     p_u32(req(m, key)?)
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn p_u16_at(m: &Map, key: &str) -> Result<u16> {
-    Ok(p_i64_at(m, key)? as u16)
+    u16::try_from(p_i64_at(m, key)?).map_err(|_| Error::malformed("AINB YAML: u16 out of range"))
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn p_u8_at(m: &Map, key: &str) -> Result<u8> {
-    Ok(p_i64_at(m, key)? as u8)
+    u8::try_from(p_i64_at(m, key)?).map_err(|_| Error::malformed("AINB YAML: u8 out of range"))
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]

@@ -51,8 +51,7 @@ impl<'a> Reader<'a> {
         Ok(v)
     }
     fn s16(&mut self) -> Result<i16> {
-        #[allow(clippy::cast_possible_wrap)]
-        Ok(self.u16()? as i16)
+        Ok(self.u16()?.cast_signed())
     }
     fn u32(&mut self) -> Result<u32> {
         let v = LE.read_u32(self.data, self.pos, CTX)?;
@@ -60,8 +59,7 @@ impl<'a> Reader<'a> {
         Ok(v)
     }
     fn s32(&mut self) -> Result<i32> {
-        #[allow(clippy::cast_possible_wrap)]
-        Ok(self.u32()? as i32)
+        Ok(self.u32()?.cast_signed())
     }
     fn f32(&mut self) -> Result<f32> {
         Ok(f32::from_bits(self.u32()?))
@@ -90,13 +88,12 @@ impl<'a> Reader<'a> {
         self.get_string(off)
     }
 
-    #[allow(clippy::many_single_char_names)]
     fn guid(&mut self) -> Result<String> {
-        let a = self.u32()?;
-        let b = self.u16()?;
-        let c = self.u16()?;
-        let d = [self.u8()?, self.u8()?];
-        let e = [
+        let time_low = self.u32()?;
+        let time_mid = self.u16()?;
+        let time_hi = self.u16()?;
+        let clock_seq = [self.u8()?, self.u8()?];
+        let node = [
             self.u8()?,
             self.u8()?,
             self.u8()?,
@@ -105,8 +102,8 @@ impl<'a> Reader<'a> {
             self.u8()?,
         ];
         Ok(format!(
-            "{a:08x}-{b:04x}-{c:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            d[0], d[1], e[0], e[1], e[2], e[3], e[4], e[5]
+            "{time_low:08x}-{time_mid:04x}-{time_hi:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            clock_seq[0], clock_seq[1], node[0], node[1], node[2], node[3], node[4], node[5]
         ))
     }
 }
@@ -126,17 +123,31 @@ fn sub_slice<T: Clone>(s: &[T], start: usize, count: usize) -> Result<Vec<T>> {
     Ok(s[start..end].to_vec())
 }
 
-#[allow(clippy::too_many_lines)]
-pub(super) fn read(data: &[u8]) -> Result<Ainb> {
-    let mut r = Reader::new(data);
-    if data.len() < 0x74 || &data[0..4] != b"AIB " {
-        return Err(Error::bad_magic("AINB"));
-    }
-    r.seek(4);
-    let version = r.u32()?;
-    check_version(version)?;
-    r.version = version;
+struct Header {
+    filename_offset: u32,
+    category_name_offset: u32,
+    command_count: usize,
+    node_count: usize,
+    attachment_count: usize,
+    blackboard_offset: usize,
+    enum_resolve_offset: usize,
+    property_offset: usize,
+    transition_offset: usize,
+    io_param_offset: usize,
+    multi_param_offset: usize,
+    attachment_offset: usize,
+    attachment_index_offset: usize,
+    expression_offset: usize,
+    replacement_offset: usize,
+    query_offset: usize,
+    x58: usize,
+    module_offset: usize,
+    action_offset: usize,
+    x6c: usize,
+    blackboard_id_offset: usize,
+}
 
+fn read_header(r: &mut Reader) -> Result<Header> {
     let filename_offset = r.u32()?;
     let command_count = r.u32()? as usize;
     let node_count = r.u32()? as usize;
@@ -145,10 +156,7 @@ pub(super) fn read(data: &[u8]) -> Result<Ainb> {
     let _output_count = r.u32()?;
     let blackboard_offset = r.u32()? as usize;
     let string_pool_offset = r.u32()? as usize;
-
     r.pool = string_pool_offset;
-    let filename = r.get_string(filename_offset)?;
-
     let enum_resolve_offset = r.u32()? as usize;
     let property_offset = r.u32()? as usize;
     let transition_offset = r.u32()? as usize;
@@ -168,69 +176,33 @@ pub(super) fn read(data: &[u8]) -> Result<Ainb> {
     let action_offset = r.u32()? as usize;
     let x6c = r.u32()? as usize;
     let blackboard_id_offset = r.u32()? as usize;
+    Ok(Header {
+        filename_offset,
+        category_name_offset,
+        command_count,
+        node_count,
+        attachment_count,
+        blackboard_offset,
+        enum_resolve_offset,
+        property_offset,
+        transition_offset,
+        io_param_offset,
+        multi_param_offset,
+        attachment_offset,
+        attachment_index_offset,
+        expression_offset,
+        replacement_offset,
+        query_offset,
+        x58,
+        module_offset,
+        action_offset,
+        x6c,
+        blackboard_id_offset,
+    })
+}
 
-    let category = r.get_string(category_name_offset)?;
-
-    let commands = (0..command_count)
-        .map(|_| read_command(&mut r))
-        .collect::<Result<Vec<_>>>()?;
-
-    let node_offset = r.tell();
-
-    r.seek(enum_resolve_offset);
-    let num_enums = r.u32()?;
-    if num_enums != 0 {
-        return Err(Error::unsupported(
-            "AINB enum resolutions are not supported".to_string(),
-        ));
-    }
-
-    r.seek(blackboard_offset);
-    let blackboard = Some(read_blackboard(&mut r)?);
-
-    let expressions = if expression_offset != 0 {
-        let blob = data
-            .get(expression_offset..module_offset)
-            .ok_or_else(|| Error::truncated(CTX, expression_offset, 0, 0))?
-            .to_vec();
-        Some(Exb::parse(blob)?)
-    } else {
-        None
-    };
-
-    r.seek(property_offset);
-    let properties = read_property_set(&mut r, io_param_offset)?;
-
-    r.seek(attachment_offset);
-    let attachments = (0..attachment_count)
-        .map(|_| read_attachment(&mut r, &properties))
-        .collect::<Result<Vec<_>>>()?;
-
-    r.seek(attachment_index_offset);
-    let attachment_indices: Vec<usize> = (0..span(attachment_offset, attachment_index_offset)? / 4)
-        .map(|_| r.u32().map(|v| v as usize))
-        .collect::<Result<Vec<_>>>()?;
-
-    r.seek(multi_param_offset);
-    let multi_sources: Vec<ParamSource> = (0..span(transition_offset, multi_param_offset)? / 8)
-        .map(|_| read_param_source(&mut r))
-        .collect::<Result<Vec<_>>>()?;
-
-    r.seek(io_param_offset);
-    let io_params = read_param_set(&mut r, multi_param_offset, &multi_sources)?;
-
-    let mut transitions: Vec<Transition> = Vec::new();
-    if transition_offset < query_offset {
-        r.seek(transition_offset);
-        transitions = read_transitions(&mut r)?;
-    }
-
+fn read_queries(r: &mut Reader, query_offset: usize, end: usize) -> Result<Vec<i32>> {
     let mut queries_raw: Vec<i32> = Vec::new();
-    let end = if expression_offset != 0 {
-        expression_offset
-    } else {
-        module_offset
-    };
     if query_offset < end {
         r.seek(query_offset);
         for _ in 0..(end - query_offset) / 4 {
@@ -239,7 +211,10 @@ pub(super) fn read(data: &[u8]) -> Result<Ainb> {
             queries_raw.push(idx);
         }
     }
+    Ok(queries_raw)
+}
 
+fn read_actions(r: &mut Reader, action_offset: usize) -> Result<HashMap<i32, Vec<Action>>> {
     let mut actions: HashMap<i32, Vec<Action>> = HashMap::new();
     r.seek(action_offset);
     let action_count = r.u32()?;
@@ -252,10 +227,13 @@ pub(super) fn read(data: &[u8]) -> Result<Ainb> {
             action,
         });
     }
+    Ok(actions)
+}
 
+fn read_modules(r: &mut Reader, module_offset: usize) -> Result<Vec<Module>> {
     r.seek(module_offset);
     let module_count = r.u32()?;
-    let modules = (0..module_count)
+    (0..module_count)
         .map(|_| {
             Ok(Module {
                 path: r.string_off()?,
@@ -263,12 +241,14 @@ pub(super) fn read(data: &[u8]) -> Result<Ainb> {
                 instance_count: r.u32()?,
             })
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect()
+}
 
-    r.seek(blackboard_id_offset);
-    let blackboard_id = r.u32()?;
-    let parent_blackboard_id = r.u32()?;
-
+fn read_replacement_table(
+    r: &mut Reader,
+    version: u32,
+    replacement_offset: usize,
+) -> Result<Vec<ReplacementEntry>> {
     let mut replacement_table: Vec<ReplacementEntry> = Vec::new();
     if version >= 0x407 {
         r.seek(replacement_offset);
@@ -278,41 +258,27 @@ pub(super) fn read(data: &[u8]) -> Result<Ainb> {
         let _updated_node = r.s16()?;
         let _updated_attach = r.s16()?;
         for _ in 0..replace_count {
-            let t = ReplacementType::from_value(i32::from(r.u8()?));
+            let rtype = ReplacementType::from_value(i32::from(r.u8()?));
             let _pad = r.u8()?;
             replacement_table.push(ReplacementEntry {
-                rtype: t,
+                rtype,
                 node_index: i32::from(r.s16()?),
                 replace_index: i32::from(r.s16()?),
                 new_index: i32::from(r.s16()?),
             });
         }
     }
+    Ok(replacement_table)
+}
 
-    r.seek(node_offset);
-    let mut nodes = (0..node_count)
-        .map(|i| {
-            read_node(
-                &mut r,
-                &attachments,
-                &attachment_indices,
-                &properties,
-                &io_params,
-                &transitions,
-                &queries_raw,
-                &actions,
-                i,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-
+fn resolve_query_indices(nodes: &mut [Node]) -> Result<()> {
     let query_indices: Vec<i32> = nodes
         .iter()
         .enumerate()
-        .filter(|(_, n)| n.is_query())
+        .filter(|(_, node)| node.is_query())
         .map(|(i, _)| i32::try_from(i).unwrap_or(-1))
         .collect();
-    for node in &mut nodes {
+    for node in nodes.iter_mut() {
         for q in &mut node.queries {
             let qi = usize::try_from(*q).map_err(|_| Error::malformed("AINB query index"))?;
             *q = *query_indices
@@ -320,20 +286,162 @@ pub(super) fn read(data: &[u8]) -> Result<Ainb> {
                 .ok_or_else(|| Error::out_of_range("AINB query", qi, query_indices.len()))?;
         }
     }
+    Ok(())
+}
 
-    let unk_section0x58 = if x58 != 0 {
-        r.seek(x58);
-        Some(UnknownSection0x58 {
-            description: r.string_off()?,
-            unk04: r.u32()?,
-            unk08: r.u32()?,
-            unk0c: r.u32()?,
-        })
+fn read_unk_section0x58(r: &mut Reader, x58: usize) -> Result<Option<UnknownSection0x58>> {
+    if x58 == 0 {
+        return Ok(None);
+    }
+    r.seek(x58);
+    Ok(Some(UnknownSection0x58 {
+        description: r.string_off()?,
+        unk04: r.u32()?,
+        unk08: r.u32()?,
+        unk0c: r.u32()?,
+    }))
+}
+
+fn read_expressions(
+    data: &[u8],
+    expression_offset: usize,
+    module_offset: usize,
+) -> Result<Option<Exb>> {
+    if expression_offset == 0 {
+        return Ok(None);
+    }
+    let blob = data
+        .get(expression_offset..module_offset)
+        .ok_or_else(|| Error::truncated(CTX, expression_offset, 0, 0))?
+        .to_vec();
+    Ok(Some(Exb::parse(blob)?))
+}
+
+struct Sections {
+    attachments: Vec<Attachment>,
+    attachment_indices: Vec<usize>,
+    io_params: ParamSet,
+    transitions: Vec<Transition>,
+}
+
+fn read_sections(r: &mut Reader, header: &Header, properties: &PropertySet) -> Result<Sections> {
+    r.seek(header.attachment_offset);
+    let attachments = (0..header.attachment_count)
+        .map(|_| read_attachment(r, properties))
+        .collect::<Result<Vec<_>>>()?;
+
+    r.seek(header.attachment_index_offset);
+    let attachment_indices: Vec<usize> =
+        (0..span(header.attachment_offset, header.attachment_index_offset)? / 4)
+            .map(|_| r.u32().map(|v| v as usize))
+            .collect::<Result<Vec<_>>>()?;
+
+    r.seek(header.multi_param_offset);
+    let multi_sources: Vec<ParamSource> =
+        (0..span(header.transition_offset, header.multi_param_offset)? / 8)
+            .map(|_| read_param_source(r))
+            .collect::<Result<Vec<_>>>()?;
+
+    r.seek(header.io_param_offset);
+    let io_params = read_param_set(r, header.multi_param_offset, &multi_sources)?;
+
+    let mut transitions: Vec<Transition> = Vec::new();
+    if header.transition_offset < header.query_offset {
+        r.seek(header.transition_offset);
+        transitions = read_transitions(r)?;
+    }
+
+    Ok(Sections {
+        attachments,
+        attachment_indices,
+        io_params,
+        transitions,
+    })
+}
+
+struct NodeCtx<'a> {
+    attachments: &'a [Attachment],
+    attachment_indices: &'a [usize],
+    properties: &'a PropertySet,
+    io_params: &'a ParamSet,
+    transitions: &'a [Transition],
+    queries_raw: &'a [i32],
+    actions: &'a HashMap<i32, Vec<Action>>,
+}
+
+pub(super) fn read(data: &[u8]) -> Result<Ainb> {
+    let mut r = Reader::new(data);
+    if data.len() < 0x74 || &data[0..4] != b"AIB " {
+        return Err(Error::bad_magic("AINB"));
+    }
+    r.seek(4);
+    let version = r.u32()?;
+    check_version(version)?;
+    r.version = version;
+
+    let header = read_header(&mut r)?;
+
+    let filename = r.get_string(header.filename_offset)?;
+    let category = r.get_string(header.category_name_offset)?;
+
+    let commands = (0..header.command_count)
+        .map(|_| read_command(&mut r))
+        .collect::<Result<Vec<_>>>()?;
+
+    let node_offset = r.tell();
+
+    r.seek(header.enum_resolve_offset);
+    let num_enums = r.u32()?;
+    if num_enums != 0 {
+        return Err(Error::unsupported(
+            "AINB enum resolutions are not supported".to_string(),
+        ));
+    }
+
+    r.seek(header.blackboard_offset);
+    let blackboard = Some(read_blackboard(&mut r)?);
+
+    let expressions = read_expressions(data, header.expression_offset, header.module_offset)?;
+
+    r.seek(header.property_offset);
+    let properties = read_property_set(&mut r, header.io_param_offset)?;
+
+    let sections = read_sections(&mut r, &header, &properties)?;
+
+    let end = if header.expression_offset != 0 {
+        header.expression_offset
     } else {
-        None
+        header.module_offset
     };
+    let queries_raw = read_queries(&mut r, header.query_offset, end)?;
 
-    let exists_section_0x6c = x6c != 0;
+    let actions = read_actions(&mut r, header.action_offset)?;
+    let modules = read_modules(&mut r, header.module_offset)?;
+
+    r.seek(header.blackboard_id_offset);
+    let blackboard_id = r.u32()?;
+    let parent_blackboard_id = r.u32()?;
+
+    let replacement_table = read_replacement_table(&mut r, version, header.replacement_offset)?;
+
+    r.seek(node_offset);
+    let node_ctx = NodeCtx {
+        attachments: &sections.attachments,
+        attachment_indices: &sections.attachment_indices,
+        properties: &properties,
+        io_params: &sections.io_params,
+        transitions: &sections.transitions,
+        queries_raw: &queries_raw,
+        actions: &actions,
+    };
+    let mut nodes = (0..header.node_count)
+        .map(|_| read_node(&mut r, &node_ctx))
+        .collect::<Result<Vec<_>>>()?;
+
+    resolve_query_indices(&mut nodes)?;
+
+    let unk_section0x58 = read_unk_section0x58(&mut r, header.x58)?;
+    let exists_section_0x6c = header.x6c != 0;
 
     Ok(Ainb {
         version,
@@ -569,7 +677,6 @@ struct BbInfo {
     flags: u8,
 }
 
-#[allow(clippy::too_many_lines)]
 fn read_blackboard(r: &mut Reader) -> Result<Blackboard> {
     let mut headers: Vec<BbHdr> = Vec::with_capacity(7);
     for ptype in BB_PARAM_TYPES {
@@ -599,7 +706,6 @@ fn read_blackboard(r: &mut Reader) -> Result<Blackboard> {
             };
             let name = r.get_string(flags & 0x3f_ffff)?;
             let notes = r.string_off()?;
-            #[allow(clippy::cast_possible_truncation)]
             let pflags = ((flags >> 0x16) & 3) as u8;
             v.push(BbInfo {
                 file_ref_index,
@@ -686,18 +792,7 @@ fn read_attachment(r: &mut Reader, properties: &PropertySet) -> Result<Attachmen
     })
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn read_node(
-    r: &mut Reader,
-    attachments: &[Attachment],
-    attachment_indices: &[usize],
-    properties: &PropertySet,
-    io_params: &ParamSet,
-    transitions: &[Transition],
-    queries_raw: &[i32],
-    actions: &HashMap<i32, Vec<Action>>,
-    _index: usize,
-) -> Result<Node> {
+fn read_node(r: &mut Reader, ctx: &NodeCtx) -> Result<Node> {
     let ntype =
         NodeType::from_value(r.u16()?).ok_or_else(|| Error::malformed("AINB unknown node type"))?;
     let index = i32::from(r.s16()?);
@@ -718,41 +813,74 @@ fn read_node(
     let base_query_index = r.u16()? as usize;
     let query_count = r.u16()? as usize;
     let state_info_offset = r.u32()? as usize;
-    let state_info = if r.version < 0x407 {
-        let save = r.tell();
-        r.seek(state_info_offset);
-        let s = StateInfo {
-            desired_state: r.string_off()?,
-            unk04: r.u32()?,
-            unk08: r.u32()?,
-            unk0c: r.u32()?,
-            unk10: r.u32()?,
-        };
-        r.seek(save);
-        Some(s)
-    } else {
-        None
-    };
+    let state_info = read_state_info(r, state_info_offset)?;
     let guid = r.guid()?;
     let node_end = r.tell();
 
-    let queries = sub_slice(queries_raw, base_query_index, query_count)?;
-    let node_attachments: Vec<Attachment> =
-        sub_slice(attachment_indices, base_attachment_index, attachment_count)?
-            .into_iter()
-            .map(|i| {
-                attachments
-                    .get(i)
-                    .cloned()
-                    .ok_or_else(|| Error::out_of_range("AINB attachment", i, attachments.len()))
-            })
-            .collect::<Result<_>>()?;
-
-    let mut node_props = PropertySet::default();
-    let mut node_params = ParamSet::default();
-    let mut plugs: [Vec<Plug>; PLUG_TYPE_COUNT] = Default::default();
+    let queries = sub_slice(ctx.queries_raw, base_query_index, query_count)?;
+    let node_attachments: Vec<Attachment> = sub_slice(
+        ctx.attachment_indices,
+        base_attachment_index,
+        attachment_count,
+    )?
+    .into_iter()
+    .map(|i| {
+        ctx.attachments
+            .get(i)
+            .cloned()
+            .ok_or_else(|| Error::out_of_range("AINB attachment", i, ctx.attachments.len()))
+    })
+    .collect::<Result<_>>()?;
 
     r.seek(node_param_offset);
+    let (node_props, node_params) = read_node_params(r, ctx.properties, ctx.io_params)?;
+    let plugs = read_node_plugs(r, ntype, &name, ctx.transitions)?;
+
+    r.seek(node_end);
+    let node_actions = ctx.actions.get(&index).cloned().unwrap_or_default();
+
+    Ok(Node {
+        name,
+        ntype,
+        index,
+        flags,
+        queries,
+        attachments: node_attachments,
+        properties: node_props,
+        params: node_params,
+        actions: node_actions,
+        guid,
+        state_info,
+        plugs,
+        expr_count,
+        expr_io_size,
+    })
+}
+
+fn read_state_info(r: &mut Reader, state_info_offset: usize) -> Result<Option<StateInfo>> {
+    if r.version >= 0x407 {
+        return Ok(None);
+    }
+    let save = r.tell();
+    r.seek(state_info_offset);
+    let state_info = StateInfo {
+        desired_state: r.string_off()?,
+        unk04: r.u32()?,
+        unk08: r.u32()?,
+        unk0c: r.u32()?,
+        unk10: r.u32()?,
+    };
+    r.seek(save);
+    Ok(Some(state_info))
+}
+
+fn read_node_params(
+    r: &mut Reader,
+    properties: &PropertySet,
+    io_params: &ParamSet,
+) -> Result<(PropertySet, ParamSet)> {
+    let mut node_props = PropertySet::default();
+    let mut node_params = ParamSet::default();
     for ptype in PARAM_TYPES {
         let base = r.u32()? as usize;
         let count = r.u32()? as usize;
@@ -766,7 +894,16 @@ fn read_node(
         let oc = r.u32()? as usize;
         node_params.outputs[ptype.index()] = sub_slice(io_params.outputs(ptype), bo, oc)?;
     }
+    Ok((node_props, node_params))
+}
 
+fn read_node_plugs(
+    r: &mut Reader,
+    ntype: NodeType,
+    name: &str,
+    transitions: &[Transition],
+) -> Result<[Vec<Plug>; PLUG_TYPE_COUNT]> {
+    let mut plugs: [Vec<Plug>; PLUG_TYPE_COUNT] = Default::default();
     let mut plug_count = [0u8; PLUG_TYPE_COUNT];
     let mut plug_base = [0u8; PLUG_TYPE_COUNT];
     for i in 0..PLUG_TYPE_COUNT {
@@ -788,7 +925,7 @@ fn read_node(
                 off as usize,
                 pt,
                 ntype,
-                &name,
+                name,
                 i == n - 1,
                 transitions,
             )?);
@@ -796,29 +933,9 @@ fn read_node(
         plugs[pt] = v;
         r.seek(save);
     }
-
-    r.seek(node_end);
-    let node_actions = actions.get(&index).cloned().unwrap_or_default();
-
-    Ok(Node {
-        name,
-        ntype,
-        index,
-        flags,
-        queries,
-        attachments: node_attachments,
-        properties: node_props,
-        params: node_params,
-        actions: node_actions,
-        guid,
-        state_info,
-        plugs,
-        expr_count,
-        expr_io_size,
-    })
+    Ok(plugs)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn read_plug(
     r: &mut Reader,
     offset: usize,

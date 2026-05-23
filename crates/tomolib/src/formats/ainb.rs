@@ -51,7 +51,7 @@ impl Ainb {
     /// Renders the graph as the editable YAML representation accepted by
     /// [`Ainb::from_yaml`].
     pub fn to_yaml(&self) -> Result<String> {
-        yaml::emit(self)
+        Ok(yaml::emit(self))
     }
 
     /// Parses the YAML representation produced by [`Ainb::to_yaml`].

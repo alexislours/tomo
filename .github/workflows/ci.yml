@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -141,6 +142,26 @@ jobs:
           tag=$(jq -r '.[] | select(.package_name == "tomocli") | .tag' <<< "$releases")
           echo "released=$released" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  release-plz-pr:
+    name: Update release PR
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-pr
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   attach:
     name: Attach binaries to release

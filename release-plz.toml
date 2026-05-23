@@ -1,0 +1,10 @@
+[workspace]
+git_tag_name = "{{ package }}-v{{ version }}"
+
+[[package]]
+name = "tomolib"
+git_release_latest = false
+
+[[package]]
+name = "tomocli"
+changelog_include = ["tomolib"]

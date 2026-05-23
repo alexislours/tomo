@@ -178,11 +178,11 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let bars = load(input)?;
     let out_dir = out.unwrap_or_else(|| append_ext(input, "d"));
     write_bundle(&bars, &out_dir, BundleOpts::default())?;
-    println!(
-        "extracted {} -> {} ({} assets)",
-        input.display(),
-        out_dir.display(),
-        bars.entries().len(),
+    crate::fmt::report(
+        "extracted",
+        input,
+        &out_dir,
+        &format!("{} assets", bars.entries().len()),
     );
     Ok(())
 }
@@ -306,12 +306,11 @@ fn pack(input: &Path, out: Option<PathBuf>) -> Result<()> {
         &doc.reset_table,
         false,
     )?;
-    println!(
-        "packed {} assets from {} -> {} ({})",
-        entries.len(),
-        input.display(),
-        out.display(),
-        fmt_bytes(total),
+    crate::fmt::report(
+        "packed",
+        input,
+        &out,
+        &format!("{} assets, {}", entries.len(), fmt_bytes(total)),
     );
     Ok(())
 }

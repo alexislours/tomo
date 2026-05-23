@@ -166,12 +166,15 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let out = out.unwrap_or_else(|| append_ext(input, "json"));
     let mut writer = BufWriter::new(crate::paths::create(&out)?);
     write_json(&table, &mut writer).with_context(|| format!("write `{}`", out.display()))?;
-    println!(
-        "extracted {} -> {} ({} crc, {} paths)",
-        input.display(),
-        out.display(),
-        table.crc_entries().len(),
-        table.path_entries().len(),
+    crate::fmt::report(
+        "extracted",
+        input,
+        &out,
+        &format!(
+            "{} crc, {} paths",
+            table.crc_entries().len(),
+            table.path_entries().len()
+        ),
     );
     Ok(())
 }
@@ -200,12 +203,7 @@ fn pack(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let n = table
         .write(&mut writer)
         .with_context(|| format!("write `{}`", out.display()))?;
-    println!(
-        "packed {} -> {} ({})",
-        input.display(),
-        out.display(),
-        fmt_bytes(n),
-    );
+    crate::fmt::report("packed", input, &out, &fmt_bytes(n));
     Ok(())
 }
 

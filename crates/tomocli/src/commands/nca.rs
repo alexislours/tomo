@@ -359,12 +359,11 @@ fn extract(input: &Path, out: Option<PathBuf>, verify_first: bool, keys: &KeyOpt
     }
     pb.finish_and_clear();
 
-    println!(
-        "extracted {} -> {} ({} files, {})",
-        input.display(),
-        out_dir.display(),
-        file_count,
-        fmt_bytes(total),
+    crate::fmt::report(
+        "extracted",
+        input,
+        &out_dir,
+        &format!("{file_count} files, {}", fmt_bytes(total)),
     );
     Ok(())
 }

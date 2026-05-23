@@ -130,7 +130,7 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let mut w = BufWriter::new(crate::paths::create(&out)?);
     emit_document_streaming(&bytes, &mut w)
         .with_context(|| format!("write `{}`", out.display()))?;
-    println!("extracted {} -> {}", input.display(), out.display());
+    crate::fmt::report("extracted", input, &out, "");
     Ok(())
 }
 
@@ -150,12 +150,7 @@ fn pack(
         .to_bytes()
         .with_context(|| format!("serialize `{}`", input.display()))?;
     write_file(&out, &bytes)?;
-    println!(
-        "packed {} -> {} ({})",
-        input.display(),
-        out.display(),
-        fmt_bytes(bytes.len() as u64),
-    );
+    crate::fmt::report("packed", input, &out, &fmt_bytes(bytes.len() as u64));
     if let Some(rstbl_path) = update_rstbl {
         rstbl::maybe_update_rstbl(&rstbl_path, resource_name, &out, bytes.len())?;
     }

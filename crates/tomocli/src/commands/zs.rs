@@ -125,11 +125,7 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let writer = BufWriter::new(crate::paths::create(&out)?);
     let n = tomolib::formats::zs::decompress(reader, writer)
         .with_context(|| format!("decompress `{}`", input.display()))?;
-    println!(
-        "extracted {} -> {} ({n} bytes)",
-        input.display(),
-        out.display()
-    );
+    crate::fmt::report("extracted", input, &out, &fmt_bytes(n));
     Ok(())
 }
 
@@ -141,10 +137,11 @@ fn pack(input: &Path, out: Option<PathBuf>, level: i32) -> Result<()> {
     let writer = BufWriter::new(crate::paths::create(&out)?);
     let n = tomolib::formats::zs::compress(reader, writer, level, Some(meta.len()))
         .with_context(|| format!("compress `{}`", input.display()))?;
-    println!(
-        "packed {} -> {} ({n} bytes in, level {level})",
-        input.display(),
-        out.display()
+    crate::fmt::report(
+        "packed",
+        input,
+        &out,
+        &format!("{} in, level {level}", fmt_bytes(n)),
     );
     Ok(())
 }

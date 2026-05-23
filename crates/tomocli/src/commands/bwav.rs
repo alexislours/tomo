@@ -170,12 +170,15 @@ fn extract(input: &Path, out: Option<PathBuf>, wav: bool) -> Result<()> {
     let bwav = load(input)?;
     let out_dir = out.unwrap_or_else(|| append_ext(input, "d"));
     write_bundle(&bwav, &out_dir, wav)?;
-    println!(
-        "extracted {} -> {} ({} channels{})",
-        input.display(),
-        out_dir.display(),
-        bwav.channels().len(),
-        if wav { ", +wav" } else { "" },
+    crate::fmt::report(
+        "extracted",
+        input,
+        &out_dir,
+        &format!(
+            "{} channels{}",
+            bwav.channels().len(),
+            if wav { ", +wav" } else { "" }
+        ),
     );
     Ok(())
 }
@@ -245,12 +248,7 @@ fn pack(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let out = out.unwrap_or_else(|| strip_d(input, "bwav"));
     write_file(&out, &bytes)?;
     let n = bytes.len() as u64;
-    println!(
-        "packed {} -> {} ({})",
-        input.display(),
-        out.display(),
-        fmt_bytes(n),
-    );
+    crate::fmt::report("packed", input, &out, &fmt_bytes(n));
     Ok(())
 }
 

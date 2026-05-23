@@ -74,11 +74,11 @@ pub(crate) fn run(args: BntxArgs) -> Result<()> {
             let bntx =
                 Bntx::parse(&bytes).with_context(|| format!("parse `{}`", input.display()))?;
             let n = write_bundle(&bntx, &dir, !no_preview)?;
-            println!(
-                "extracted {} -> {}/ ({n} texture{})",
-                input.display(),
-                dir.display(),
-                plural(n)
+            crate::fmt::report(
+                "extracted",
+                &input,
+                &dir,
+                &format!("{n} texture{}", plural(n)),
             );
             Ok(())
         }
@@ -93,12 +93,7 @@ pub(crate) fn run(args: BntxArgs) -> Result<()> {
                 .write()
                 .with_context(|| format!("serialize `{}`", dest.display()))?;
             write_file(&dest, &bytes)?;
-            println!(
-                "packed {}/ -> {} ({})",
-                input.display(),
-                dest.display(),
-                fmt_bytes(bytes.len() as u64)
-            );
+            crate::fmt::report("packed", &input, &dest, &fmt_bytes(bytes.len() as u64));
             Ok(())
         }
     }

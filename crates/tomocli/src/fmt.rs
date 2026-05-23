@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 
 use anyhow::Result;
 use owo_colors::OwoColorize;
@@ -22,6 +23,14 @@ pub(crate) fn print_json(value: &serde_json::Value) -> Result<()> {
     match std::io::stdout().lock().write_all(&buf) {
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
         other => Ok(other?),
+    }
+}
+
+pub(crate) fn report(verb: &str, from: &Path, to: &Path, detail: &str) {
+    if detail.is_empty() {
+        println!("{verb} {} -> {}", from.display(), to.display());
+    } else {
+        println!("{verb} {} -> {} ({detail})", from.display(), to.display());
     }
 }
 

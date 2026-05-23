@@ -182,12 +182,11 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     }
     pb.finish_and_clear();
 
-    println!(
-        "extracted {} -> {} ({} files, {})",
-        input.display(),
-        out_dir.display(),
-        fs.entries().len(),
-        fmt_bytes(payload),
+    crate::fmt::report(
+        "extracted",
+        input,
+        &out_dir,
+        &format!("{} files, {}", fs.entries().len(), fmt_bytes(payload)),
     );
     Ok(())
 }

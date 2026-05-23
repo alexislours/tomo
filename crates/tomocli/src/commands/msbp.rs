@@ -104,7 +104,7 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let out = out.unwrap_or_else(|| append_ext(input, "yml"));
     let mut w = BufWriter::new(crate::paths::create(&out)?);
     lms::emit_msbp(&m, &mut w)?;
-    println!("extracted {} -> {}", input.display(), out.display());
+    crate::fmt::report("extracted", input, &out, "");
     Ok(())
 }
 
@@ -121,12 +121,7 @@ fn pack(
     };
     let bytes = lms::parse_msbp(&text)?.to_bytes()?;
     write_file(&out, &bytes)?;
-    println!(
-        "packed {} -> {} ({})",
-        input.display(),
-        out.display(),
-        fmt_bytes(bytes.len() as u64),
-    );
+    crate::fmt::report("packed", input, &out, &fmt_bytes(bytes.len() as u64));
     if let Some(rstbl_path) = update_rstbl {
         rstbl::maybe_update_rstbl(&rstbl_path, resource_name, &out, bytes.len())?;
     }

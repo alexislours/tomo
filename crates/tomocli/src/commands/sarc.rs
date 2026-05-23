@@ -212,12 +212,11 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
         write_file(&dest, sarc.data(entry))?;
         written += u64::from(entry.len());
     }
-    println!(
-        "extracted {} -> {} ({} files, {})",
-        input.display(),
-        out_dir.display(),
-        sarc.entries().len(),
-        fmt_bytes(written),
+    crate::fmt::report(
+        "extracted",
+        input,
+        &out_dir,
+        &format!("{} files, {}", sarc.entries().len(), fmt_bytes(written)),
     );
     Ok(())
 }
@@ -248,12 +247,11 @@ fn pack(input: &Path, out: Option<PathBuf>, byte_order: ByteOrder, align: u32) -
     let mut writer = BufWriter::new(crate::paths::create(&out)?);
     let total = sarc::write(&mut writer, &entries, byte_order, align)
         .with_context(|| format!("write `{}`", out.display()))?;
-    println!(
-        "packed {} files from {} -> {} ({})",
-        entries.len(),
-        input.display(),
-        out.display(),
-        fmt_bytes(total),
+    crate::fmt::report(
+        "packed",
+        input,
+        &out,
+        &format!("{} files, {}", entries.len(), fmt_bytes(total)),
     );
     Ok(())
 }

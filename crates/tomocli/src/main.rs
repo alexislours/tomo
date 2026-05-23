@@ -71,17 +71,37 @@ enum Command {
     },
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let want_color = match cli.color {
+fn want_color(when: ColorWhen) -> bool {
+    match when {
         ColorWhen::Always => true,
         ColorWhen::Never => false,
         ColorWhen::Auto => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             !no_color && std::io::stdout().is_terminal()
         }
+    }
+}
+
+fn main() -> Result<()> {
+    let cmd = Cli::command();
+    let early = cmd
+        .clone()
+        .ignore_errors(true)
+        .try_get_matches()
+        .ok()
+        .and_then(|m| m.get_one::<ColorWhen>("color").copied())
+        .unwrap_or_default();
+    let color_choice = if want_color(early) {
+        clap::ColorChoice::Always
+    } else {
+        clap::ColorChoice::Never
     };
-    owo_colors::set_override(want_color);
+    let cli = cmd
+        .color(color_choice)
+        .try_get_matches()
+        .and_then(|m| <Cli as clap::FromArgMatches>::from_arg_matches(&m))
+        .unwrap_or_else(|e| e.exit());
+    owo_colors::set_override(want_color(cli.color));
 
     match cli.command {
         Command::Ainb(args) => commands::ainb::run(args),

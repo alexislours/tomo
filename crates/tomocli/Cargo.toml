@@ -23,6 +23,7 @@ image-encode-gpu = ["tomolib/image-encode-gpu"]
 [dependencies]
 tomolib = { workspace = true, features = ["image"] }
 clap.workspace = true
+clap_complete.workspace = true
 anyhow.workspace = true
 tabled.workspace = true
 owo-colors.workspace = true

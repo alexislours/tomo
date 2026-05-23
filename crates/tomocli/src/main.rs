@@ -1,7 +1,8 @@
 use std::io::IsTerminal;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 mod commands;
 mod fmt;
@@ -63,6 +64,11 @@ enum Command {
     Sarc(commands::sarc::SarcArgs),
     /// Work with `.zs` (zstd-compressed) files.
     Zs(commands::zs::ZsArgs),
+    /// Generate a shell completion script.
+    Completions {
+        /// Shell to generate completions for.
+        shell: Shell,
+    },
 }
 
 fn main() -> Result<()> {
@@ -91,5 +97,11 @@ fn main() -> Result<()> {
         Command::Rstbl(args) => commands::rstbl::run(args),
         Command::Sarc(args) => commands::sarc::run(args),
         Command::Zs(args) => commands::zs::run(args),
+        Command::Completions { shell } => {
+            let mut cmd = Cli::command();
+            let bin = cmd.get_name().to_string();
+            clap_complete::generate(shell, &mut cmd, bin, &mut std::io::stdout());
+            Ok(())
+        }
     }
 }

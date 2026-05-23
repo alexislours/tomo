@@ -20,8 +20,19 @@ mod paths;
     arg_required_else_help = true
 )]
 struct Cli {
+    /// When to use colored output.
+    #[arg(long, value_enum, default_value_t = ColorWhen::Auto, global = true)]
+    color: ColorWhen,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+enum ColorWhen {
+    #[default]
+    Auto,
+    Always,
+    Never,
 }
 
 #[derive(Debug, Subcommand)]
@@ -55,11 +66,17 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-    let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
-    let want_color = !no_color && std::io::stdout().is_terminal();
+    let cli = Cli::parse();
+    let want_color = match cli.color {
+        ColorWhen::Always => true,
+        ColorWhen::Never => false,
+        ColorWhen::Auto => {
+            let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+            !no_color && std::io::stdout().is_terminal()
+        }
+    };
     owo_colors::set_override(want_color);
 
-    let cli = Cli::parse();
     match cli.command {
         Command::Ainb(args) => commands::ainb::run(args),
         Command::Bars(args) => commands::bars::run(args),

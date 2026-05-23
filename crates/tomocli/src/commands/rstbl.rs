@@ -27,6 +27,8 @@ enum Verb {
         input: PathBuf,
         #[arg(short, long)]
         list: bool,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     Extract {
         input: PathBuf,
@@ -42,7 +44,11 @@ enum Verb {
 
 pub(crate) fn run(args: RstblArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input, list } => info(&input, list),
+        Verb::Info {
+            input,
+            list,
+            common,
+        } => info(&input, list, common.json),
         Verb::Extract { input, out } => extract(&input, out),
         Verb::Pack { input, out } => pack(&input, out),
     }
@@ -53,9 +59,33 @@ fn load(path: &Path) -> Result<Rstbl> {
     Rstbl::parse(&bytes).with_context(|| format!("parse `{}`", path.display()))
 }
 
-fn info(input: &Path, list: bool) -> Result<()> {
+fn info(input: &Path, list: bool, json: bool) -> Result<()> {
     let table = load(input)?;
     let meta = fs::metadata(input).with_context(|| format!("stat `{}`", input.display()))?;
+
+    if json {
+        let mut obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "version": table.version(),
+            "path_field_size": table.path_size(),
+            "crc_entries": table.crc_entries().len(),
+            "path_entries": table.path_entries().len(),
+            "total_size": meta.len(),
+        });
+        if list {
+            obj["crc_entry_list"] = table
+                .crc_entries()
+                .iter()
+                .map(|e| serde_json::json!({ "hash": e.hash, "size": e.size }))
+                .collect();
+            obj["path_entry_list"] = table
+                .path_entries()
+                .iter()
+                .map(|e| serde_json::json!({ "name": e.name, "size": e.size }))
+                .collect();
+        }
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| {

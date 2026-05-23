@@ -21,6 +21,8 @@ enum Verb {
     Info {
         /// Path to the AINB file.
         input: PathBuf,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Decompose an AINB into a YAML tree (EXB kept as a base64 blob).
     Extract {
@@ -50,7 +52,7 @@ pub(crate) fn convert_bytes_to_yaml(bytes: &[u8]) -> Result<Vec<u8>> {
 
 pub(crate) fn run(args: AinbArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input } => info(&input),
+        Verb::Info { input, common } => info(&input, common.json),
         Verb::Extract { input, out } => extract(&input, out),
         Verb::Pack { input, out } => pack(&input, out),
     }
@@ -61,8 +63,43 @@ fn load(path: &Path) -> Result<Ainb> {
     Ainb::parse(&bytes).with_context(|| format!("parse `{}`", path.display()))
 }
 
-fn info(input: &Path) -> Result<()> {
+fn info(input: &Path, json: bool) -> Result<()> {
     let ainb = load(input)?;
+    let queries = ainb.nodes.iter().filter(|n| n.is_query()).count();
+    let bb_params: usize = ainb
+        .blackboard
+        .as_ref()
+        .map_or(0, |bb| bb.params.iter().map(Vec::len).sum());
+    let attachments: usize = ainb.nodes.iter().map(|n| n.attachments.len()).sum();
+
+    if json {
+        let mut obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "version": ainb.version,
+            "filename": ainb.filename,
+            "category": ainb.category,
+            "commands": ainb.commands.len(),
+            "nodes": ainb.nodes.len(),
+            "query_nodes": queries,
+            "blackboard_params": bb_params,
+            "modules": ainb.modules.len(),
+            "node_attachments": attachments,
+            "section_0x6c": ainb.exists_section_0x6c,
+        });
+        if ainb.version >= 0x407 {
+            obj["replacements"] = serde_json::json!(ainb.replacement_table.len());
+        }
+        obj["expressions"] = match &ainb.expressions {
+            Some(exb) => serde_json::json!({
+                "version": exb.version(),
+                "expressions": exb.expression_count(),
+                "instructions": exb.instruction_count(),
+                "bytes": exb.len(),
+            }),
+            None => serde_json::Value::Null,
+        };
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String| t.push_record([label(k), value(v)]);
@@ -71,15 +108,9 @@ fn info(input: &Path) -> Result<()> {
     row("Category", ainb.category.clone());
     row("Commands", ainb.commands.len().to_string());
     row("Nodes", ainb.nodes.len().to_string());
-    let queries = ainb.nodes.iter().filter(|n| n.is_query()).count();
     row("Query nodes", queries.to_string());
-    let bb_params: usize = ainb
-        .blackboard
-        .as_ref()
-        .map_or(0, |bb| bb.params.iter().map(Vec::len).sum());
     row("Blackboard params", bb_params.to_string());
     row("Modules", ainb.modules.len().to_string());
-    let attachments: usize = ainb.nodes.iter().map(|n| n.attachments.len()).sum();
     row("Node attachments", attachments.to_string());
     if ainb.version >= 0x407 {
         row("Replacements", ainb.replacement_table.len().to_string());

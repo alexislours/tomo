@@ -33,6 +33,8 @@ enum Verb {
         /// List every asset instead of just a summary.
         #[arg(short, long)]
         list: bool,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Extract a BARS into a directory of `.bwav` + `.bamta` files.
     Extract {
@@ -66,7 +68,11 @@ enum Verb {
 
 pub(crate) fn run(args: BarsArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input, list } => info(&input, list),
+        Verb::Info {
+            input,
+            list,
+            common,
+        } => info(&input, list, common.json),
         Verb::Extract { input, out } => extract(&input, out),
         Verb::Pack { input, out } => pack(&input, out),
         Verb::Patch {
@@ -83,22 +89,47 @@ fn load(path: &Path) -> Result<Bars> {
     Bars::parse(bytes).with_context(|| format!("parse `{}`", path.display()))
 }
 
-fn info(input: &Path, list: bool) -> Result<()> {
+fn info(input: &Path, list: bool, json: bool) -> Result<()> {
     let bars = load(input)?;
     let entries = bars.entries();
+
+    let byte_order = match bars.byte_order() {
+        ByteOrder::Little => "little",
+        ByteOrder::Big => "big",
+    };
+    let with_asset = entries.iter().filter(|e| bars.asset(e).is_some()).count();
+
+    if json {
+        let mut obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "byte_order": byte_order,
+            "version": bars.version(),
+            "assets": entries.len(),
+            "with_waveform": with_asset,
+            "total_size": bars.total_size(),
+        });
+        if list {
+            obj["entries"] = entries
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "hash": e.hash,
+                        "name": e.name,
+                        "asset_size": bars.asset(e).map(<[u8]>::len),
+                    })
+                })
+                .collect();
+        }
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| {
         t.push_record([label(k), value(v), extra]);
     };
-    let byte_order = match bars.byte_order() {
-        ByteOrder::Little => "little",
-        ByteOrder::Big => "big",
-    };
     row("Byte order", byte_order.to_string(), String::new());
     row("Version", format!("{:#06x}", bars.version()), String::new());
     row("Assets", entries.len().to_string(), String::new());
-    let with_asset = entries.iter().filter(|e| bars.asset(e).is_some()).count();
     row("With waveform", with_asset.to_string(), String::new());
     let total = bars.total_size() as u64;
     row("Total size", fmt_bytes(total), extra_bytes(total));

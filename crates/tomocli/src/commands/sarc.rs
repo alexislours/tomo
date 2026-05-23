@@ -27,6 +27,8 @@ enum Verb {
         /// List every entry instead of just a summary.
         #[arg(short, long)]
         list: bool,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Extract a SARC into a directory.
     Extract {
@@ -69,7 +71,11 @@ impl From<Endian> for ByteOrder {
 
 pub(crate) fn run(args: SarcArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input, list } => info(&input, list),
+        Verb::Info {
+            input,
+            list,
+            common,
+        } => info(&input, list, common.json),
         Verb::Extract { input, out } => extract(&input, out),
         Verb::Pack {
             input,
@@ -85,17 +91,45 @@ fn load_sarc(path: &Path) -> Result<Sarc> {
     Sarc::parse(bytes).with_context(|| format!("parse `{}`", path.display()))
 }
 
-fn info(input: &Path, list: bool) -> Result<()> {
+fn info(input: &Path, list: bool, json: bool) -> Result<()> {
     let sarc = load_sarc(input)?;
     let entries = sarc.entries();
+
+    let byte_order = match sarc.byte_order() {
+        ByteOrder::Little => "little",
+        ByteOrder::Big => "big",
+    };
+    let data_bytes: u64 = entries.iter().map(|e| u64::from(e.len())).sum();
+
+    if json {
+        let mut obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "byte_order": byte_order,
+            "version": sarc.version(),
+            "files": entries.len(),
+            "hash_multiplier": sarc.hash_multiplier(),
+            "data_offset": sarc.data_offset(),
+            "total_size": sarc.total_size(),
+            "payload_bytes": data_bytes,
+        });
+        if list {
+            obj["entries"] = entries
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "name": e.name,
+                        "size": e.len(),
+                        "offset": e.data_start,
+                    })
+                })
+                .collect();
+        }
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| {
         t.push_record([label(k), value(v), extra]);
-    };
-    let byte_order = match sarc.byte_order() {
-        ByteOrder::Little => "little",
-        ByteOrder::Big => "big",
     };
     row("Byte order", byte_order.to_string(), String::new());
     row("Version", format!("{:#06x}", sarc.version()), String::new());
@@ -112,7 +146,6 @@ fn info(input: &Path, list: bool) -> Result<()> {
     );
     let total = u64::from(sarc.total_size());
     row("Total size", fmt_bytes(total), extra_bytes(total));
-    let data_bytes: u64 = entries.iter().map(|e| u64::from(e.len())).sum();
     row(
         "Payload bytes",
         fmt_bytes(data_bytes),

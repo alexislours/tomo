@@ -22,6 +22,8 @@ enum Verb {
     Info {
         /// Path to the .zs file to inspect.
         input: PathBuf,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Decompress a .zs file.
     Extract {
@@ -46,17 +48,26 @@ enum Verb {
 
 pub(crate) fn run(args: ZsArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input } => info(&input),
+        Verb::Info { input, common } => info(&input, common.json),
         Verb::Extract { input, out } => extract(&input, out),
         Verb::Pack { input, out, level } => pack(&input, out, level),
     }
 }
 
-fn info(input: &Path) -> Result<()> {
+fn info(input: &Path, json: bool) -> Result<()> {
     let meta = fs::metadata(input).with_context(|| format!("stat `{}`", input.display()))?;
     let file = File::open(input).with_context(|| format!("open `{}`", input.display()))?;
     let info = tomolib::formats::zs::info(BufReader::new(file), meta.len())
         .with_context(|| format!("inspect `{}`", input.display()))?;
+
+    if json {
+        let obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "compressed_size": info.compressed_size,
+            "decompressed_size": info.decompressed_size,
+        });
+        return crate::fmt::print_json(&obj);
+    }
 
     let size = |n: u64| value(fmt_bytes(n));
 

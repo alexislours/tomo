@@ -40,6 +40,8 @@ enum Verb {
         list: bool,
         #[command(flatten)]
         keys: KeyOpts,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Extract the partitions of an NCA into a directory.
     Extract {
@@ -65,7 +67,12 @@ enum Verb {
 
 pub(crate) fn run(args: NcaArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input, list, keys } => info(&input, list, &keys),
+        Verb::Info {
+            input,
+            list,
+            keys,
+            common,
+        } => info(&input, list, &keys, common.json),
         Verb::Extract {
             input,
             out,
@@ -116,10 +123,59 @@ fn open(path: &Path, keys: &KeySet) -> Result<(BufReader<File>, Nca)> {
     Ok((reader, nca))
 }
 
-fn info(input: &Path, list: bool, keys: &KeyOpts) -> Result<()> {
+fn info_json(input: &Path, nca: &Nca, reader: &mut BufReader<File>, list: bool) -> Result<()> {
+    let h = &nca.header;
+    let mut partitions = Vec::with_capacity(nca.partitions.len());
+    for p in &nca.partitions {
+        let mut obj = serde_json::json!({
+            "index": p.index,
+            "format": p.format.name(),
+            "hash_type": p.hash_type.name(),
+            "enc_type": p.enc_type.name(),
+            "offset": p.offset,
+            "size": p.size,
+        });
+        if list {
+            match nca.list_partition(reader, p) {
+                Ok(entries) => {
+                    obj["files"] = entries
+                        .iter()
+                        .map(|e| serde_json::json!({ "path": e.path, "size": e.size }))
+                        .collect();
+                }
+                Err(err) => obj["error"] = serde_json::json!(err.to_string()),
+            }
+        }
+        partitions.push(obj);
+    }
+    let mut obj = serde_json::json!({
+        "file": input.display().to_string(),
+        "format": h.format.to_string(),
+        "distribution": h.distribution.name(),
+        "content_type": h.content_type.name(),
+        "program_id": format!("{:016x}", h.program_id),
+        "content_index": h.content_index,
+        "sdk_version": h.sdk_addon_version_string(),
+        "key_generation": h.key_generation,
+        "kaek_index": h.kaek_index,
+        "content_size": h.content_size,
+        "content_key": if nca.has_content_key() { "resolved" } else { "missing" },
+        "partitions": partitions,
+    });
+    if h.has_rights_id() {
+        obj["rights_id"] = serde_json::json!(hex(&h.rights_id));
+    }
+    crate::fmt::print_json(&obj)
+}
+
+fn info(input: &Path, list: bool, keys: &KeyOpts, json: bool) -> Result<()> {
     let keys = load_keys(keys)?;
     let (mut reader, nca) = open(input, &keys)?;
     let h = &nca.header;
+
+    if json {
+        return info_json(input, &nca, &mut reader, list);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| t.push_record([label(k), value(v), extra]);

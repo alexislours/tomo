@@ -30,6 +30,8 @@ enum Verb {
         /// List every entry instead of just a summary.
         #[arg(short, long)]
         list: bool,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Extract the files inside an NSP into a directory.
     Extract {
@@ -43,7 +45,11 @@ enum Verb {
 
 pub(crate) fn run(args: NspArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input, list } => info(&input, list),
+        Verb::Info {
+            input,
+            list,
+            common,
+        } => info(&input, list, common.json),
         Verb::Extract { input, out } => extract(&input, out),
     }
 }
@@ -55,9 +61,32 @@ fn open(path: &Path) -> Result<(File, PartitionFs)> {
     Ok((file, fs))
 }
 
-fn info(input: &Path, list: bool) -> Result<()> {
+fn info(input: &Path, list: bool, json: bool) -> Result<()> {
     let (_, fs) = open(input)?;
     let entries = fs.entries();
+
+    if json {
+        let mut obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "type": fs.kind().name(),
+            "files": entries.len(),
+            "header_size": fs.header_size(),
+            "payload_size": fs.payload_size(),
+        });
+        if list {
+            obj["entries"] = entries
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "name": e.name,
+                        "size": e.size,
+                        "offset": e.offset,
+                    })
+                })
+                .collect();
+        }
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| {

@@ -27,6 +27,8 @@ enum Verb {
     Info {
         /// Path to the BWAV file.
         input: PathBuf,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Decompose a BWAV into a directory (YAML sidecar + raw channel blobs).
     Extract {
@@ -51,7 +53,7 @@ enum Verb {
 
 pub(crate) fn run(args: BwavArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input } => info(&input),
+        Verb::Info { input, common } => info(&input, common.json),
         Verb::Extract { input, out, wav } => extract(&input, out, wav),
         Verb::Pack { input, out } => pack(&input, out),
     }
@@ -70,17 +72,56 @@ fn codec_name(codec: u16) -> String {
     }
 }
 
-fn info(input: &Path) -> Result<()> {
+fn channel_duration(ch: &BwavChannel) -> f64 {
+    if ch.sample_rate == 0 {
+        0.0
+    } else {
+        f64::from(ch.sample_count) / f64::from(ch.sample_rate)
+    }
+}
+
+fn info(input: &Path, json: bool) -> Result<()> {
     let bwav = load(input)?;
     let meta = fs::metadata(input).with_context(|| format!("stat `{}`", input.display()))?;
+    let byte_order = match bwav.byte_order() {
+        ByteOrder::Little => "little",
+        ByteOrder::Big => "big",
+    };
+
+    if json {
+        let channels: Vec<_> = bwav
+            .channels()
+            .iter()
+            .map(|ch| {
+                serde_json::json!({
+                    "codec": ch.codec,
+                    "codec_name": codec_name(ch.codec),
+                    "sample_rate": ch.sample_rate,
+                    "sample_count": ch.sample_count,
+                    "duration_secs": channel_duration(ch),
+                    "loop": if ch.loop_flag != 0 {
+                        serde_json::json!({ "start": ch.loop_start, "end": ch.loop_end })
+                    } else {
+                        serde_json::Value::Null
+                    },
+                })
+            })
+            .collect();
+        let obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "byte_order": byte_order,
+            "version": bwav.version(),
+            "prefetch": bwav.prefetch(),
+            "sample_hash": bwav.hash(),
+            "total_size": meta.len(),
+            "channels": channels,
+        });
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| {
         t.push_record([label(k), value(v), extra]);
-    };
-    let byte_order = match bwav.byte_order() {
-        ByteOrder::Little => "little",
-        ByteOrder::Big => "big",
     };
     row("Byte order", byte_order.to_string(), String::new());
     row("Version", format!("{:#06x}", bwav.version()), String::new());
@@ -103,11 +144,7 @@ fn info(input: &Path) -> Result<()> {
     let mut b = Builder::default();
     b.push_record(["#", "codec", "rate", "samples", "duration", "loop"]);
     for (i, ch) in bwav.channels().iter().enumerate() {
-        let secs = if ch.sample_rate == 0 {
-            0.0
-        } else {
-            f64::from(ch.sample_count) / f64::from(ch.sample_rate)
-        };
+        let secs = channel_duration(ch);
         let looping = if ch.loop_flag != 0 {
             format!("{}..{}", ch.loop_start, ch.loop_end)
         } else {

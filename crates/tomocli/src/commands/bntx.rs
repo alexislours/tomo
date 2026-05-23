@@ -27,6 +27,8 @@ enum Verb {
         /// List per-texture details for every texture.
         #[arg(short, long)]
         list: bool,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
     },
     /// Extract a BNTX to a `<name>.bntx.d/` bundle: `meta.json`, a raw swizzled
     /// `.bin` per texture (lossless), and a decoded `.png` preview per texture.
@@ -57,7 +59,11 @@ enum Verb {
 
 pub(crate) fn run(args: BntxArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input, list } => info(&input, list),
+        Verb::Info {
+            input,
+            list,
+            common,
+        } => info(&input, list, common.json),
         Verb::Extract {
             input,
             out,
@@ -98,14 +104,46 @@ pub(crate) fn run(args: BntxArgs) -> Result<()> {
     }
 }
 
-fn info(input: &Path, list: bool) -> Result<()> {
+fn info(input: &Path, list: bool, json: bool) -> Result<()> {
     let bytes = read_file(input)?;
     let bntx = Bntx::parse(&bytes).with_context(|| format!("parse `{}`", input.display()))?;
     let meta = std::fs::metadata(input).with_context(|| format!("stat `{}`", input.display()))?;
+    let (maj, min, mic) = bntx.version;
+
+    if json {
+        let mut obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "platform": bntx.platform.name(),
+            "version": format!("{maj}.{min}.{mic}"),
+            "name": bntx.name,
+            "alignment": bntx.alignment(),
+            "total_size": meta.len(),
+            "textures": bntx.textures.len(),
+        });
+        if list {
+            obj["texture_list"] = bntx
+                .textures
+                .iter()
+                .map(|tex| {
+                    serde_json::json!({
+                        "name": tex.name,
+                        "width": tex.info.width,
+                        "height": tex.info.height,
+                        "format": tex.info.format.name(),
+                        "mips": tex.info.mip_count,
+                        "array": tex.info.array_count,
+                        "tile_mode": if tex.info.tile_mode == 0 { "optimal" } else { "linear" },
+                        "block_height": 1u32 << tex.info.block_height_log2(),
+                        "image_size": tex.info.image_size,
+                    })
+                })
+                .collect();
+        }
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| t.push_record([label(k), value(v), extra]);
-    let (maj, min, mic) = bntx.version;
     row("Platform", bntx.platform.name().to_string(), String::new());
     row("Version", format!("{maj}.{min}.{mic}"), String::new());
     row("Name", bntx.name.clone(), String::new());

@@ -25,7 +25,11 @@ pub(crate) struct BymlArgs {
 #[derive(Debug, Subcommand)]
 enum Verb {
     /// Summarize a BYML file.
-    Info { input: PathBuf },
+    Info {
+        input: PathBuf,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
+    },
     /// Decompose a BYML/BGYML into a YAML document.
     Extract {
         input: PathBuf,
@@ -52,7 +56,7 @@ enum Verb {
 
 pub(crate) fn run(args: BymlArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input } => info(&input),
+        Verb::Info { input, common } => info(&input, common.json),
         Verb::Extract { input, out } => extract(&input, out),
         Verb::Pack {
             input,
@@ -69,7 +73,7 @@ pub(crate) fn convert_bytes_to_yaml(bytes: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn info(input: &Path) -> Result<()> {
+fn info(input: &Path, json: bool) -> Result<()> {
     let bytes = fs::read(input).with_context(|| format!("read `{}`", input.display()))?;
     let b = Byml::parse(&bytes).with_context(|| format!("parse `{}`", input.display()))?;
 
@@ -78,6 +82,18 @@ fn info(input: &Path) -> Result<()> {
         Endian::Little => "little",
         Endian::Big => "big",
     };
+
+    if json {
+        let obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "version": b.version,
+            "endian": endian,
+            "root_type": kind,
+            "root_entries": count,
+            "total_size": bytes.len(),
+        });
+        return crate::fmt::print_json(&obj);
+    }
 
     let mut t = Builder::default();
     let mut row = |k: &str, v: String, extra: String| {

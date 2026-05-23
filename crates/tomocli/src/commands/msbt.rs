@@ -21,7 +21,11 @@ pub(crate) struct MsbtArgs {
 #[derive(Debug, Subcommand)]
 enum Verb {
     /// Summarize an MSBT file.
-    Info { input: PathBuf },
+    Info {
+        input: PathBuf,
+        #[command(flatten)]
+        common: crate::fmt::InfoArgs,
+    },
     /// Decompose an MSBT into a YAML document.
     Extract {
         input: PathBuf,
@@ -52,7 +56,7 @@ enum Verb {
 
 pub(crate) fn run(args: MsbtArgs) -> Result<()> {
     match args.verb {
-        Verb::Info { input } => info(&input),
+        Verb::Info { input, common } => info(&input, common.json),
         Verb::Extract { input, out, msbp } => extract(&input, out, msbp),
         Verb::Pack {
             input,
@@ -72,8 +76,21 @@ fn read_msbt(input: &Path) -> Result<Msbt> {
     Ok(Msbt::parse(&bytes)?)
 }
 
-fn info(input: &Path) -> Result<()> {
+fn info(input: &Path, json: bool) -> Result<()> {
     let m = read_msbt(input)?;
+
+    if json {
+        let obj = serde_json::json!({
+            "file": input.display().to_string(),
+            "format": "MSBT",
+            "version": m.header.version,
+            "messages": m.messages.len(),
+            "attr_size": m.attr_size,
+            "sections": m.order.len(),
+        });
+        return crate::fmt::print_json(&obj);
+    }
+
     let mut t = Builder::default();
     let mut row = |k: &str, v: String| t.push_record([label(k), value(v), String::new()]);
     row("Format", "MSBT".into());

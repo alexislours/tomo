@@ -611,7 +611,7 @@ mod tests {
     fn romfs_handles_every_format_command() {
         use clap::CommandFactory;
 
-        let outer_containers: HashSet<&str> = ["romfs", "nsp"].into_iter().collect();
+        let outer_containers: HashSet<&str> = ["romfs", "nsp", "nca"].into_iter().collect();
         let kinds: HashSet<&str> = Kind::value_variants().iter().map(|k| k.name()).collect();
         for sub in crate::Cli::command().get_subcommands() {
             let name = sub.get_name();

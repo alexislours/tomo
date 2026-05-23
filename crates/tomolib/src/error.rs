@@ -42,6 +42,9 @@ pub enum Error {
 
     #[error("{0}")]
     Malformed(String),
+
+    #[error("{0}")]
+    Integrity(String),
 }
 
 impl Error {
@@ -89,6 +92,10 @@ impl Error {
 
     pub(crate) fn malformed(msg: impl Into<String>) -> Self {
         Self::Malformed(msg.into())
+    }
+
+    pub(crate) fn integrity(msg: impl Into<String>) -> Self {
+        Self::Integrity(msg.into())
     }
 }
 

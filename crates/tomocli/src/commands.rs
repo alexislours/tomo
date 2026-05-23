@@ -6,6 +6,7 @@ pub(crate) mod byml;
 pub(crate) mod lms;
 pub(crate) mod msbp;
 pub(crate) mod msbt;
+pub(crate) mod nca;
 pub(crate) mod nsp;
 pub(crate) mod romfs;
 pub(crate) mod rstbl;

@@ -62,6 +62,7 @@ tomo sarc pack some.byml.yml --out some.byml
 | `.bwav`                                      |   ✓    |     ✓     |   ✓    |
 | `.bars`                                      |   ✓    |     ✓     |   ✓    |
 | `.ainb`                                      |   ✓    |     ✓     |   ✓    |
+| `.nca`                                       |   ✓    |     ✓     |   ✗    |
 | `.nsp`                                       |   ✓    |     ✓     |   ✗    |
 
 A `romfs extract` command recursively unpacks a whole directory tree.

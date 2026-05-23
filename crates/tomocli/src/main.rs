@@ -40,6 +40,8 @@ enum Command {
     Msbt(commands::msbt::MsbtArgs),
     /// Work with `.msbp` (`LibMessageStudio`) project files.
     Msbp(commands::msbp::MsbpArgs),
+    /// Work with `.nca` (Nintendo Content Archive) files.
+    Nca(commands::nca::NcaArgs),
     /// Work with `.nsp` (Nintendo Submission Package) files.
     Nsp(commands::nsp::NspArgs),
     /// Recursively unpack a directory.
@@ -66,6 +68,7 @@ fn main() -> Result<()> {
         Command::Byml(args) => commands::byml::run(args),
         Command::Msbt(args) => commands::msbt::run(args),
         Command::Msbp(args) => commands::msbp::run(args),
+        Command::Nca(args) => commands::nca::run(args),
         Command::Nsp(args) => commands::nsp::run(args),
         Command::Romfs(args) => commands::romfs::run(args),
         Command::Rstbl(args) => commands::rstbl::run(args),

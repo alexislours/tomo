@@ -3,18 +3,18 @@ use std::io::Write;
 
 pub use crate::formats::binio::ByteOrder;
 
+use crate::formats::amta::{
+    AMTA_MAGIC, NAME_PTR_OFFSET as AMTA_NAME_PTR_OFFSET, SIZE_OFFSET as AMTA_SIZE_OFFSET, read_name,
+};
 use crate::formats::bwav::{self, BWAV_MAGIC};
 use crate::formats::hash::crc32;
 use crate::{Error, Result};
 
 pub const BARS_MAGIC: [u8; 4] = *b"BARS";
-const AMTA_MAGIC: [u8; 4] = *b"AMTA";
 
 const HEADER_SIZE: usize = 0x10;
 const OFFSET_SET_SIZE: usize = 8;
 const ASSET_ALIGN: usize = 0x40;
-const AMTA_SIZE_OFFSET: usize = 0x08;
-const AMTA_NAME_PTR_OFFSET: usize = 0x24;
 const ABSENT: u32 = 0xFFFF_FFFF;
 
 /// One entry in a [`Bars`] archive: an AMTA metadata blob and an optional audio
@@ -184,7 +184,7 @@ fn build_entries(
                 "entry {i} AMTA size overflows buffer"
             )));
         }
-        let name = read_amta_name(bytes, byte_order, meta_off)?;
+        let name = read_name(bytes, byte_order, meta_off)?;
 
         let asset = match asset_offs[i] {
             None => None,
@@ -209,21 +209,6 @@ fn build_entries(
         });
     }
     Ok(entries)
-}
-
-fn read_amta_name(bytes: &[u8], byte_order: ByteOrder, meta_off: usize) -> Result<String> {
-    let rel =
-        byte_order.read_u32(bytes, meta_off + AMTA_NAME_PTR_OFFSET, "AMTA name pointer")? as usize;
-    let start = meta_off + rel + AMTA_NAME_PTR_OFFSET;
-    if start >= bytes.len() {
-        return Err(Error::malformed("AMTA name pointer out of range"));
-    }
-    let end = bytes[start..]
-        .iter()
-        .position(|&b| b == 0)
-        .map(|p| start + p)
-        .ok_or_else(|| Error::malformed("unterminated AMTA name"))?;
-    String::from_utf8(bytes[start..end].to_vec()).map_err(|_| Error::invalid_utf8("AMTA name"))
 }
 
 fn asset_len(bytes: &[u8], off: usize, boundary: usize) -> Result<usize> {

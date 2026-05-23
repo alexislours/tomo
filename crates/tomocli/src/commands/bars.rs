@@ -3,6 +3,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -190,12 +191,23 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
 #[derive(Default, Clone, Copy)]
 struct BundleOpts {
     recurse_bwav: bool,
+    convert_meta: bool,
     wav: bool,
 }
 
-fn write_bundle(bars: &Bars, dir: &Path, opts: BundleOpts) -> Result<u64> {
+#[derive(Default, Clone, Copy)]
+#[allow(clippy::struct_field_names)]
+pub(crate) struct InnerConverts {
+    pub bamta_files: u64,
+    pub bamta_in: u64,
+    pub bamta_out: u64,
+    pub bamta_dur: Duration,
+}
+
+fn write_bundle(bars: &Bars, dir: &Path, opts: BundleOpts) -> Result<(u64, InnerConverts)> {
     fs::create_dir_all(dir).with_context(|| format!("create `{}`", dir.display()))?;
     let mut total = 0u64;
+    let mut inner = InnerConverts::default();
 
     let mut manifest = String::new();
     let order = match bars.byte_order() {
@@ -216,12 +228,32 @@ fn write_bundle(bars: &Bars, dir: &Path, opts: BundleOpts) -> Result<u64> {
             stem = format!("{base}_{suffix}");
             suffix += 1;
         }
-        let bamta = format!("{stem}.bamta");
         let meta = bars.meta(e);
-        write_file(&dir.join(&bamta), meta)?;
-        total += meta.len() as u64;
+        let converted = if opts.convert_meta {
+            let started = Instant::now();
+            super::bamta::convert_to_yaml(meta)
+                .ok()
+                .map(|body| (body, started.elapsed()))
+        } else {
+            None
+        };
+        let meta_name = if let Some((body, dur)) = converted {
+            let yml = format!("{stem}.bamta.yml");
+            inner.bamta_dur += dur;
+            write_file(&dir.join(&yml), &body)?;
+            total += body.len() as u64;
+            inner.bamta_files += 1;
+            inner.bamta_in += meta.len() as u64;
+            inner.bamta_out += body.len() as u64;
+            yml
+        } else {
+            let bamta = format!("{stem}.bamta");
+            write_file(&dir.join(&bamta), meta)?;
+            total += meta.len() as u64;
+            bamta
+        };
         let _ = writeln!(manifest, "  - name: {}", yaml_quote(&e.name));
-        let _ = writeln!(manifest, "    meta: {}", yaml_quote(&bamta));
+        let _ = writeln!(manifest, "    meta: {}", yaml_quote(&meta_name));
 
         if let Some(asset) = bars.asset(e) {
             let is_bwav = asset.starts_with(&tomolib::formats::bwav::BWAV_MAGIC);
@@ -242,16 +274,21 @@ fn write_bundle(bars: &Bars, dir: &Path, opts: BundleOpts) -> Result<u64> {
 
     write_file(&dir.join(MANIFEST), manifest.as_bytes())?;
     total += manifest.len() as u64;
-    Ok(total)
+    Ok((total, inner))
 }
 
-pub(crate) fn convert_to_bundle(bytes: &[u8], dir: &Path, wav: bool) -> Result<u64> {
+pub(crate) fn convert_to_bundle(
+    bytes: &[u8],
+    dir: &Path,
+    wav: bool,
+) -> Result<(u64, InnerConverts)> {
     let bars = Bars::parse(bytes.to_vec())?;
     write_bundle(
         &bars,
         dir,
         BundleOpts {
             recurse_bwav: true,
+            convert_meta: true,
             wav,
         },
     )
@@ -272,7 +309,18 @@ fn pack(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let mut metas = Vec::with_capacity(doc.entries.len());
     let mut assets = Vec::with_capacity(doc.entries.len());
     for e in &doc.entries {
-        metas.push(read_file(&input.join(&e.meta))?);
+        let meta_path = input.join(&e.meta);
+        let is_yaml = meta_path
+            .extension()
+            .is_some_and(|x| x == "yml" || x == "yaml");
+        metas.push(if is_yaml {
+            let text = fs::read_to_string(&meta_path)
+                .with_context(|| format!("read `{}`", meta_path.display()))?;
+            super::bamta::yaml_to_bytes(&text)
+                .with_context(|| format!("rebuild AMTA from `{}`", meta_path.display()))?
+        } else {
+            read_file(&meta_path)?
+        });
         assets.push(match &e.asset {
             Some(p) => {
                 let path = input.join(p);

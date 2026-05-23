@@ -1,4 +1,5 @@
 pub(crate) mod ainb;
+pub(crate) mod bamta;
 pub(crate) mod bars;
 pub(crate) mod bntx;
 pub(crate) mod bnvib;

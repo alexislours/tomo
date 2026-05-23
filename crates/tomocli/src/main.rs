@@ -43,6 +43,8 @@ enum ColorWhen {
 enum Command {
     /// Work with `.ainb` (AI node graph) files.
     Ainb(commands::ainb::AinbArgs),
+    /// Work with `.bamta` (AMTA audio metadata) files.
+    Bamta(commands::bamta::BamtaArgs),
     /// Work with `.bars` (audio resource) archives.
     Bars(commands::bars::BarsArgs),
     /// Work with `.bntx` (Switch texture) files.
@@ -111,6 +113,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Ainb(args) => commands::ainb::run(args),
+        Command::Bamta(args) => commands::bamta::run(args),
         Command::Bars(args) => commands::bars::run(args),
         Command::Bntx(args) => commands::bntx::run(args),
         Command::Bnvib(args) => commands::bnvib::run(args),

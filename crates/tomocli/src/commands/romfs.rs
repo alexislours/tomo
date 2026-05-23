@@ -13,6 +13,7 @@ use owo_colors::OwoColorize;
 use rayon::prelude::*;
 use tomolib::formats::{
     ainb::AINB_MAGIC,
+    amta::AMTA_MAGIC,
     bars::BARS_MAGIC,
     bntx::BNTX_MAGIC,
     bwav::BWAV_MAGIC,
@@ -46,6 +47,7 @@ enum Kind {
     Msbp,
     Bntx,
     Bars,
+    Bamta,
     Bwav,
     Bnvib,
     Ainb,
@@ -62,6 +64,7 @@ impl Kind {
             Self::Msbp => &[&MSBP_MAGIC],
             Self::Bntx => &[&BNTX_MAGIC],
             Self::Bars => &[&BARS_MAGIC],
+            Self::Bamta => &[&AMTA_MAGIC],
             Self::Bwav => &[&BWAV_MAGIC],
             Self::Bnvib => &[
                 &[0x04, 0, 0, 0, 0x03, 0],
@@ -89,6 +92,7 @@ impl Kind {
             Self::Msbp => "msbp",
             Self::Bntx => "bntx",
             Self::Bars => "bars",
+            Self::Bamta => "bamta",
             Self::Bwav => "bwav",
             Self::Bnvib => "bnvib",
             Self::Ainb => "ainb",
@@ -131,7 +135,9 @@ enum Verb {
         #[arg(long, value_delimiter = ',', value_enum)]
         only: Vec<Kind>,
         /// Convert known leaf formats to a text form (RESTBL to JSON; byml,
-        /// msbt, msbp and ainb to YAML). Converted files are written next to
+        /// msbt, msbp, ainb and bnvib to YAML). Containers are decomposed into
+        /// directories: bntx/bwav into blob bundles, bars into per-asset bwav
+        /// bundles and bamta YAML sidecars. Converted files are written next to
         /// the original output path with the matching extension appended.
         /// Other formats are emitted as raw bytes.
         #[arg(long)]
@@ -314,9 +320,20 @@ impl ProcessCtx {
     }
 
     fn note_convert(&self, kind: Kind, input_bytes: u64, output_bytes: u64, dur: Duration) {
+        self.note_convert_n(kind, 1, input_bytes, output_bytes, dur);
+    }
+
+    fn note_convert_n(
+        &self,
+        kind: Kind,
+        files: u64,
+        input_bytes: u64,
+        output_bytes: u64,
+        dur: Duration,
+    ) {
         let mut stats = self.convert_stats.lock().expect("convert_stats poisoned");
         let entry = stats.entry(kind).or_default();
-        entry.files += 1;
+        entry.files += files;
         entry.input_bytes += input_bytes;
         entry.output_bytes += output_bytes;
         entry.nanos += dur.as_nanos();
@@ -418,6 +435,7 @@ fn process(
             | Kind::Msbp
             | Kind::Bntx
             | Kind::Bars
+            | Kind::Bamta
             | Kind::Bwav
             | Kind::Bnvib
             | Kind::Ainb,
@@ -445,14 +463,38 @@ fn emit_leaf(
         if matches!(k, Kind::Bntx | Kind::Bars | Kind::Bwav) {
             let started = Instant::now();
             let dir = append_ext(out_path, "d");
+            let mut inner = super::bars::InnerConverts::default();
             let written = match k {
-                Kind::Bntx => super::bntx::convert_to_bundle(bytes, &dir, true),
-                Kind::Bars => super::bars::convert_to_bundle(bytes, &dir, true),
-                Kind::Bwav => super::bwav::convert_to_bundle(bytes, &dir, true),
+                Kind::Bntx => super::bntx::convert_to_bundle(bytes, &dir, true)
+                    .with_context(|| format!("convert `{}`", out_path.display()))?,
+                Kind::Bars => {
+                    let (w, c) = super::bars::convert_to_bundle(bytes, &dir, true)
+                        .with_context(|| format!("convert `{}`", out_path.display()))?;
+                    inner = c;
+                    w
+                }
+                Kind::Bwav => super::bwav::convert_to_bundle(bytes, &dir, true)
+                    .with_context(|| format!("convert `{}`", out_path.display()))?,
                 _ => unreachable!(),
+            };
+            let elapsed = started.elapsed();
+            if inner.bamta_files > 0 {
+                ctx.note_convert(
+                    k,
+                    (bytes.len() as u64).saturating_sub(inner.bamta_in),
+                    written.saturating_sub(inner.bamta_out),
+                    elapsed.saturating_sub(inner.bamta_dur),
+                );
+                ctx.note_convert_n(
+                    Kind::Bamta,
+                    inner.bamta_files,
+                    inner.bamta_in,
+                    inner.bamta_out,
+                    inner.bamta_dur,
+                );
+            } else {
+                ctx.note_convert(k, bytes.len() as u64, written, elapsed);
             }
-            .with_context(|| format!("convert `{}`", out_path.display()))?;
-            ctx.note_convert(k, bytes.len() as u64, written, started.elapsed());
             ctx.note_written(written);
             return Ok(());
         }
@@ -481,6 +523,7 @@ fn convert_leaf(
         Kind::Msbp => Ok(super::lms::msbp_to_yaml(bytes).map(|b| Some((b, "yml")))?),
         Kind::Ainb => super::ainb::convert_bytes_to_yaml(bytes).map(|b| Some((b, "yml"))),
         Kind::Bnvib => super::bnvib::convert_to_yaml(bytes).map(|b| Some((b, "yml"))),
+        Kind::Bamta => super::bamta::convert_to_yaml(bytes).map(|b| Some((b, "yml"))),
         Kind::Bntx | Kind::Sarc | Kind::Zs | Kind::Bars | Kind::Bwav => Ok(None),
     }
 }
@@ -549,6 +592,7 @@ mod tests {
         assert_eq!(Kind::detect(&with_magic(&MSBP_MAGIC)), Some(Kind::Msbp));
         assert_eq!(Kind::detect(&with_magic(&BNTX_MAGIC)), Some(Kind::Bntx));
         assert_eq!(Kind::detect(&with_magic(&BARS_MAGIC)), Some(Kind::Bars));
+        assert_eq!(Kind::detect(&with_magic(&AMTA_MAGIC)), Some(Kind::Bamta));
         assert_eq!(Kind::detect(&with_magic(&BWAV_MAGIC)), Some(Kind::Bwav));
         assert_eq!(
             Kind::detect(&with_magic(&[0x0C, 0, 0, 0, 0x03, 0])),
@@ -612,6 +656,7 @@ mod tests {
             Kind::Msbp,
             Kind::Bntx,
             Kind::Bars,
+            Kind::Bamta,
             Kind::Bwav,
             Kind::Bnvib,
             Kind::Ainb,

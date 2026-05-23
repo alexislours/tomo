@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/tomolib", "crates/tomocli"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.90"
 license = "GPL-3.0-or-later"
@@ -15,7 +15,7 @@ keywords = ["tomodachi-life", "nintendo", "switch", "modding"]
 categories = ["command-line-utilities", "parser-implementations", "encoding"]
 
 [workspace.dependencies]
-tomolib = { path = "crates/tomolib", version = "1.0.0" }
+tomolib = { path = "crates/tomolib", version = "1.1.0" }
 
 thiserror = "2.0.18"
 anyhow = "1.0.102"

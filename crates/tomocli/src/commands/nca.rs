@@ -21,8 +21,8 @@ pub(crate) struct NcaArgs {
 
 #[derive(Debug, Args)]
 struct KeyOpts {
-    /// Path to `prod.keys`. Defaults to `$TOMO_KEYS`, then `$HOME/.switch/prod.keys`.
-    #[arg(short, long, global = true)]
+    /// Path to `prod.keys`. Defaults to `$HOME/.switch/prod.keys`.
+    #[arg(short, long, global = true, env = "TOMO_KEYS")]
     keys: Option<PathBuf>,
     /// Path to `title.keys` (for NCAs that carry a rights id).
     #[arg(short, long, global = true)]
@@ -77,14 +77,9 @@ pub(crate) fn run(args: NcaArgs) -> Result<()> {
 }
 
 fn load_keys(opts: &KeyOpts) -> Result<KeySet> {
-    let prod_path = opts
-        .keys
-        .clone()
-        .or_else(|| std::env::var_os("TOMO_KEYS").map(PathBuf::from))
-        .or_else(default_prod_keys)
-        .context(
-            "could not locate prod.keys; pass --keys or set $TOMO_KEYS / ~/.switch/prod.keys",
-        )?;
+    let prod_path = opts.keys.clone().or_else(default_prod_keys).context(
+        "could not locate prod.keys; pass --keys or set $TOMO_KEYS / ~/.switch/prod.keys",
+    )?;
     let prod = fs::read_to_string(&prod_path)
         .with_context(|| format!("read keys `{}`", prod_path.display()))?;
 

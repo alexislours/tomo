@@ -26,7 +26,7 @@ texture2ddecoder = "0.1.2"
 squish = "1"
 ctt-astcenc = "0.4"
 intel_tex_2 = "0.5"
-clap = { version = "4.6.1", features = ["derive", "wrap_help"] }
+clap = { version = "4.6.1", features = ["derive", "wrap_help", "env"] }
 zstd = "0.13.3"
 tabled = { version = "0.20", features = ["ansi"] }
 owo-colors = { version = "4.3.0", features = ["supports-colors"] }

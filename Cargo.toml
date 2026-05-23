@@ -18,9 +18,9 @@ tomolib = { path = "crates/tomolib", version = "1.1.0" }
 
 thiserror = "2.0.18"
 anyhow = "1.0.102"
-aes = "0.8.4"
-ctr = "0.9.2"
-sha2 = "0.10.9"
+aes = "0.9.0"
+ctr = "0.10.1"
+sha2 = "0.11.0"
 png = "0.18.1"
 texture2ddecoder = "0.1.2"
 squish = "1"

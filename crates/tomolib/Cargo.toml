@@ -27,9 +27,6 @@ squish = { workspace = true, optional = true }
 ctt-astcenc = { workspace = true, optional = true }
 intel_tex_2 = { workspace = true, optional = true }
 
-[target.'cfg(not(target_os = "windows"))'.dependencies]
-sha2 = { workspace = true, features = ["asm"] }
-
 [features]
 default = ["image"]
 # Texture decode/encode (PNG + block codecs). Pulls in image crates; the

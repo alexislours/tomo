@@ -1,6 +1,6 @@
 use aes::Aes128;
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::cipher::array::Array;
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use ctr::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 
 pub(crate) const BLOCK: usize = 16;
@@ -22,19 +22,19 @@ impl Aes128Ecb {
     #[must_use]
     pub(crate) fn new(key: &[u8; BLOCK]) -> Self {
         Self {
-            cipher: Aes128::new(GenericArray::from_slice(key)),
+            cipher: Aes128::new(&Array::from(*key)),
         }
     }
 
     #[must_use]
     pub(crate) fn decrypt_block(&self, block: &[u8; BLOCK]) -> [u8; BLOCK] {
-        let mut b = GenericArray::clone_from_slice(block);
+        let mut b = Array::from(*block);
         self.cipher.decrypt_block(&mut b);
         b.into()
     }
 
     fn encrypt_into(&self, block: &mut [u8; BLOCK]) {
-        let mut b = GenericArray::clone_from_slice(block);
+        let mut b = Array::from(*block);
         self.cipher.encrypt_block(&mut b);
         block.copy_from_slice(&b);
     }

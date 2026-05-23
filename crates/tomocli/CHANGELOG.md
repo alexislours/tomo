@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0](https://github.com/alexislours/tomo/compare/tomocli-v1.3.0...tomocli-v1.4.0) - 2026-05-23
+
+### Added
+
+- add rstbl patch subcommand
+- add AMTA format support
+- add BNVIB format support
+
 ## [1.3.0](https://github.com/alexislours/tomo/compare/tomocli-v1.2.0...tomocli-v1.3.0) - 2026-05-23
 
 ### Added

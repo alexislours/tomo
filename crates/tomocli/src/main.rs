@@ -24,6 +24,9 @@ struct Cli {
     /// When to use colored output.
     #[arg(long, value_enum, default_value_t = ColorWhen::Auto, global = true)]
     color: ColorWhen,
+    /// Overwrite existing output files instead of refusing.
+    #[arg(short, long, global = true)]
+    force: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -102,6 +105,7 @@ fn main() -> Result<()> {
         .and_then(|m| <Cli as clap::FromArgMatches>::from_arg_matches(&m))
         .unwrap_or_else(|e| e.exit());
     owo_colors::set_override(want_color(cli.color));
+    paths::set_force(cli.force);
 
     match cli.command {
         Command::Ainb(args) => commands::ainb::run(args),

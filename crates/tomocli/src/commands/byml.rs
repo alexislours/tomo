@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fs::{self, File};
+use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -127,8 +127,7 @@ fn root_summary(v: &Value) -> (&'static str, usize) {
 fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let bytes = fs::read(input).with_context(|| format!("read `{}`", input.display()))?;
     let out = out.unwrap_or_else(|| append_ext(input, "yml"));
-    let mut w =
-        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let mut w = BufWriter::new(crate::paths::create(&out)?);
     emit_document_streaming(&bytes, &mut w)
         .with_context(|| format!("write `{}`", out.display()))?;
     println!("extracted {} -> {}", input.display(), out.display());

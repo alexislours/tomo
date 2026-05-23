@@ -163,8 +163,7 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
             fs::create_dir_all(parent).with_context(|| format!("create `{}`", parent.display()))?;
         }
         pb.set_message(entry.name.clone());
-        let mut writer =
-            File::create(&dest).with_context(|| format!("create `{}`", dest.display()))?;
+        let mut writer = crate::paths::create(&dest)?;
 
         file.seek(SeekFrom::Start(entry.offset))?;
         let mut remaining = entry.size;

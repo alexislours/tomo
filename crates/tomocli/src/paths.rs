@@ -1,7 +1,37 @@
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
+
+static FORCE: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_force(force: bool) {
+    FORCE.store(force, Ordering::Relaxed);
+}
+
+fn force() -> bool {
+    FORCE.load(Ordering::Relaxed)
+}
+
+pub(crate) fn create_overwrite(path: &Path) -> Result<File> {
+    File::create(path).with_context(|| format!("create `{}`", path.display()))
+}
+
+pub(crate) fn create(path: &Path) -> Result<File> {
+    if force() {
+        return create_overwrite(path);
+    }
+    match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(f) => Ok(f),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
+            "`{}` already exists; pass --force to overwrite",
+            path.display()
+        ),
+        Err(e) => Err(e).with_context(|| format!("create `{}`", path.display())),
+    }
+}
 
 pub(crate) fn unnamed_entry(index: usize) -> String {
     format!("unnamed_{index:04}.bin")
@@ -38,7 +68,9 @@ pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>> {
 }
 
 pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    fs::write(path, bytes).with_context(|| format!("write `{}`", path.display()))
+    let mut f = create(path)?;
+    f.write_all(bytes)
+        .with_context(|| format!("write `{}`", path.display()))
 }
 
 pub(crate) fn sanitize_relative(name: &str) -> Result<PathBuf> {
@@ -59,4 +91,28 @@ pub(crate) fn sanitize_relative(name: &str) -> Result<PathBuf> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_path() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("tomo-create-{}-{nanos}.tmp", std::process::id()))
+    }
+
+    #[test]
+    fn create_refuses_existing_without_force() {
+        let path = unique_path();
+        write_file(&path, b"first").unwrap();
+        let err = create(&path).unwrap_err().to_string();
+        assert!(err.contains("already exists"), "got: {err}");
+        assert!(err.contains("--force"), "got: {err}");
+        fs::remove_file(&path).ok();
+    }
 }

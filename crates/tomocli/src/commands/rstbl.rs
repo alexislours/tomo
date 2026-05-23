@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
@@ -164,8 +164,7 @@ fn info(input: &Path, list: bool, json: bool) -> Result<()> {
 fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     let table = load(input)?;
     let out = out.unwrap_or_else(|| append_ext(input, "json"));
-    let mut writer =
-        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let mut writer = BufWriter::new(crate::paths::create(&out)?);
     write_json(&table, &mut writer).with_context(|| format!("write `{}`", out.display()))?;
     println!(
         "extracted {} -> {} ({} crc, {} paths)",
@@ -197,8 +196,7 @@ fn pack(input: &Path, out: Option<PathBuf>) -> Result<()> {
         Some(p) => p,
         None => strip_ext(input, &["json"])?,
     };
-    let mut writer =
-        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let mut writer = BufWriter::new(crate::paths::create(&out)?);
     let n = table
         .write(&mut writer)
         .with_context(|| format!("write `{}`", out.display()))?;

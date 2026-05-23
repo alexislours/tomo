@@ -122,8 +122,7 @@ fn extract(input: &Path, out: Option<PathBuf>) -> Result<()> {
     };
     let reader =
         BufReader::new(File::open(input).with_context(|| format!("open `{}`", input.display()))?);
-    let writer =
-        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let writer = BufWriter::new(crate::paths::create(&out)?);
     let n = tomolib::formats::zs::decompress(reader, writer)
         .with_context(|| format!("decompress `{}`", input.display()))?;
     println!(
@@ -139,8 +138,7 @@ fn pack(input: &Path, out: Option<PathBuf>, level: i32) -> Result<()> {
     let meta = fs::metadata(input).with_context(|| format!("stat `{}`", input.display()))?;
     let reader =
         BufReader::new(File::open(input).with_context(|| format!("open `{}`", input.display()))?);
-    let writer =
-        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let writer = BufWriter::new(crate::paths::create(&out)?);
     let n = tomolib::formats::zs::compress(reader, writer, level, Some(meta.len()))
         .with_context(|| format!("compress `{}`", input.display()))?;
     println!(

@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
@@ -108,8 +108,7 @@ fn info(input: &Path, json: bool) -> Result<()> {
 fn extract(input: &Path, out: Option<PathBuf>, msbp: Option<PathBuf>) -> Result<()> {
     let m = read_msbt(input)?;
     let out = out.unwrap_or_else(|| append_ext(input, "yml"));
-    let mut w =
-        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let mut w = BufWriter::new(crate::paths::create(&out)?);
     let reg = lms::load_registry(input, msbp)?;
     lms::emit_msbt(&m, reg.as_ref(), &mut w)?;
     println!("extracted {} -> {}", input.display(), out.display());

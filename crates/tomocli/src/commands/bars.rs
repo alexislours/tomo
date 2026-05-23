@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Write as _;
-use std::fs::{self, File};
+use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
@@ -304,6 +304,7 @@ fn pack(input: &Path, out: Option<PathBuf>) -> Result<()> {
         doc.byte_order,
         doc.version,
         &doc.reset_table,
+        false,
     )?;
     println!(
         "packed {} assets from {} -> {} ({})",
@@ -340,12 +341,14 @@ fn patch(input: &Path, asset_name: &str, new_bwav: &Path, out: Option<PathBuf>) 
         .collect();
 
     let out = out.unwrap_or_else(|| input.to_path_buf());
+    let in_place = out == input;
     let total = write_bars(
         &out,
         &entries,
         bars.byte_order(),
         bars.version(),
         bars.reset_table(),
+        in_place,
     )?;
     println!(
         "patched `{asset_name}` in {} -> {} ({})",
@@ -362,9 +365,14 @@ fn write_bars(
     byte_order: ByteOrder,
     version: u16,
     reset_table: &[u8],
+    overwrite: bool,
 ) -> Result<u64> {
-    let mut writer =
-        BufWriter::new(File::create(out).with_context(|| format!("create `{}`", out.display()))?);
+    let file = if overwrite {
+        crate::paths::create_overwrite(out)?
+    } else {
+        crate::paths::create(out)?
+    };
+    let mut writer = BufWriter::new(file);
     bars::write(&mut writer, entries, byte_order, version, reset_table)
         .with_context(|| format!("write `{}`", out.display()))
 }

@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
@@ -245,8 +245,7 @@ fn pack(input: &Path, out: Option<PathBuf>, byte_order: ByteOrder, align: u32) -
         })
         .collect();
 
-    let mut writer =
-        BufWriter::new(File::create(&out).with_context(|| format!("create `{}`", out.display()))?);
+    let mut writer = BufWriter::new(crate::paths::create(&out)?);
     let total = sarc::write(&mut writer, &entries, byte_order, align)
         .with_context(|| format!("write `{}`", out.display()))?;
     println!(

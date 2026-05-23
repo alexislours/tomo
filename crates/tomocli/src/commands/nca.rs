@@ -350,8 +350,7 @@ fn extract(input: &Path, out: Option<PathBuf>, verify_first: bool, keys: &KeyOpt
                     .with_context(|| format!("create `{}`", parent.display()))?;
             }
             pb.set_message(entry.path.clone());
-            let mut writer =
-                File::create(&dest).with_context(|| format!("create `{}`", dest.display()))?;
+            let mut writer = crate::paths::create(&dest)?;
             nca.copy_file(&mut reader, p, entry, &mut writer)
                 .with_context(|| format!("extract `{}`", entry.path))?;
             file_count += 1;

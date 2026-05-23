@@ -1,5 +1,12 @@
 # tomo
 
+[![CI](https://github.com/alexislours/tomo/actions/workflows/ci.yml/badge.svg)](https://github.com/alexislours/tomo/actions/workflows/ci.yml)
+[![tomocli on crates.io](https://img.shields.io/crates/v/tomocli.svg?label=tomocli)](https://crates.io/crates/tomocli)
+[![tomolib on crates.io](https://img.shields.io/crates/v/tomolib.svg?label=tomolib)](https://crates.io/crates/tomolib)
+[![docs.rs](https://img.shields.io/docsrs/tomolib)](https://docs.rs/tomolib)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+![MSRV](https://img.shields.io/badge/rustc-1.90+-blue.svg)
+
 Tooling for **Tomodachi Life: Living the Dream** game data: inspect, extract, convert, and repack romfs files.
 
 The workspace is two crates:

@@ -611,16 +611,18 @@ mod tests {
     fn romfs_handles_every_format_command() {
         use clap::CommandFactory;
 
+        let outer_containers: HashSet<&str> = ["romfs", "nsp"].into_iter().collect();
         let kinds: HashSet<&str> = Kind::value_variants().iter().map(|k| k.name()).collect();
         for sub in crate::Cli::command().get_subcommands() {
             let name = sub.get_name();
-            if name == "romfs" {
+            if outer_containers.contains(name) {
                 continue;
             }
             assert!(
                 kinds.contains(name),
                 "`tomo {name}` is a format command but romfs Kind has no matching variant; \
-                 add it to Kind so `romfs extract` can detect it"
+                 add it to Kind so `romfs extract` can detect it, or list it in \
+                 `outer_containers` if it wraps a romfs tree rather than living inside one"
             );
         }
     }

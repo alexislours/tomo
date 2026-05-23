@@ -8,6 +8,7 @@ pub mod hash;
 pub mod lms;
 pub mod msbp;
 pub mod msbt;
+pub mod nsp;
 pub mod rstbl;
 pub mod sarc;
 pub mod zs;

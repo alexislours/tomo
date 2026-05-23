@@ -32,7 +32,7 @@ Building from source needs a C/C++ toolchain (for `zstd` and the bundled texture
 
 ## Usage
 
-Commands follow a `tomo <format> <verb>` pattern. Every format supports the same three verbs:
+Commands follow a `tomo <format> <verb>` pattern. Most formats support the same three verbs:
 
 | Verb      | What it does                                                  |
 | --------- | ------------------------------------------------------------- |
@@ -62,6 +62,7 @@ tomo sarc pack some.byml.yml --out some.byml
 | `.bwav`                                      |   ✓    |     ✓     |   ✓    |
 | `.bars`                                      |   ✓    |     ✓     |   ✓    |
 | `.ainb`                                      |   ✓    |     ✓     |   ✓    |
+| `.nsp`                                       |   ✓    |     ✓     |   ✗    |
 
 A `romfs extract` command recursively unpacks a whole directory tree.
 

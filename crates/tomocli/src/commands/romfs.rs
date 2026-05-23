@@ -47,6 +47,7 @@ enum Kind {
     Bntx,
     Bars,
     Bwav,
+    Bnvib,
     Ainb,
 }
 
@@ -62,6 +63,11 @@ impl Kind {
             Self::Bntx => &[&BNTX_MAGIC],
             Self::Bars => &[&BARS_MAGIC],
             Self::Bwav => &[&BWAV_MAGIC],
+            Self::Bnvib => &[
+                &[0x04, 0, 0, 0, 0x03, 0],
+                &[0x0C, 0, 0, 0, 0x03, 0],
+                &[0x10, 0, 0, 0, 0x03, 0],
+            ],
             Self::Ainb => &[&AINB_MAGIC],
         }
     }
@@ -84,6 +90,7 @@ impl Kind {
             Self::Bntx => "bntx",
             Self::Bars => "bars",
             Self::Bwav => "bwav",
+            Self::Bnvib => "bnvib",
             Self::Ainb => "ainb",
         }
     }
@@ -412,6 +419,7 @@ fn process(
             | Kind::Bntx
             | Kind::Bars
             | Kind::Bwav
+            | Kind::Bnvib
             | Kind::Ainb,
         )
         | None => {
@@ -472,6 +480,7 @@ fn convert_leaf(
         Kind::Msbt => Ok(super::lms::msbt_to_yaml(bytes, reg).map(|b| Some((b, "yml")))?),
         Kind::Msbp => Ok(super::lms::msbp_to_yaml(bytes).map(|b| Some((b, "yml")))?),
         Kind::Ainb => super::ainb::convert_bytes_to_yaml(bytes).map(|b| Some((b, "yml"))),
+        Kind::Bnvib => super::bnvib::convert_to_yaml(bytes).map(|b| Some((b, "yml"))),
         Kind::Bntx | Kind::Sarc | Kind::Zs | Kind::Bars | Kind::Bwav => Ok(None),
     }
 }
@@ -541,6 +550,10 @@ mod tests {
         assert_eq!(Kind::detect(&with_magic(&BNTX_MAGIC)), Some(Kind::Bntx));
         assert_eq!(Kind::detect(&with_magic(&BARS_MAGIC)), Some(Kind::Bars));
         assert_eq!(Kind::detect(&with_magic(&BWAV_MAGIC)), Some(Kind::Bwav));
+        assert_eq!(
+            Kind::detect(&with_magic(&[0x0C, 0, 0, 0, 0x03, 0])),
+            Some(Kind::Bnvib)
+        );
         assert_eq!(Kind::detect(&with_magic(&AINB_MAGIC)), Some(Kind::Ainb));
     }
 
@@ -600,6 +613,7 @@ mod tests {
             Kind::Bntx,
             Kind::Bars,
             Kind::Bwav,
+            Kind::Bnvib,
             Kind::Ainb,
         ] {
             let parsed = <Kind as ValueEnum>::from_str(kind.name(), false);

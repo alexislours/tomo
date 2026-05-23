@@ -1,6 +1,7 @@
 pub(crate) mod ainb;
 pub(crate) mod bars;
 pub(crate) mod bntx;
+pub(crate) mod bnvib;
 pub(crate) mod bwav;
 pub(crate) mod byml;
 pub(crate) mod lms;

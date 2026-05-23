@@ -13,3 +13,5 @@ Cargo.lock.bak
 
 # Game files
 samples/
+
+/formats

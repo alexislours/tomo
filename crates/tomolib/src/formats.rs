@@ -2,6 +2,7 @@ pub mod ainb;
 pub mod bars;
 pub mod binio;
 pub mod bntx;
+pub mod bnvib;
 pub mod bwav;
 pub mod byml;
 pub mod hash;

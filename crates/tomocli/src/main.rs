@@ -47,6 +47,8 @@ enum Command {
     Bars(commands::bars::BarsArgs),
     /// Work with `.bntx` (Switch texture) files.
     Bntx(commands::bntx::BntxArgs),
+    /// Work with `.bnvib` (HD rumble vibration) files.
+    Bnvib(commands::bnvib::BnvibArgs),
     /// Work with `.bwav` (binary waveform) files.
     Bwav(commands::bwav::BwavArgs),
     /// Work with `.byml` / `.bgyml` files.
@@ -111,6 +113,7 @@ fn main() -> Result<()> {
         Command::Ainb(args) => commands::ainb::run(args),
         Command::Bars(args) => commands::bars::run(args),
         Command::Bntx(args) => commands::bntx::run(args),
+        Command::Bnvib(args) => commands::bnvib::run(args),
         Command::Bwav(args) => commands::bwav::run(args),
         Command::Byml(args) => commands::byml::run(args),
         Command::Msbt(args) => commands::msbt::run(args),

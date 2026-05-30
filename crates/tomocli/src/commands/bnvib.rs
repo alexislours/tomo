@@ -8,6 +8,7 @@ use owo_colors::OwoColorize;
 use saphyr::{LoadableYamlNode, Yaml};
 use tomolib::formats::bnvib::{self, Bnvib};
 
+use crate::commands::yaml::get;
 use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, value};
 use crate::paths::{append_ext, read_file, strip_ext, write_file};
 
@@ -244,13 +245,6 @@ fn parse_yaml(text: &str) -> Result<Bnvib> {
         loop_wait,
         samples,
     })
-}
-
-fn get<'a, 'b>(map: &'a Yaml<'b>, key: &str) -> Option<&'a Yaml<'b>> {
-    map.as_mapping()?
-        .iter()
-        .find(|(k, _)| k.as_str() == Some(key))
-        .map(|(_, v)| v)
 }
 
 fn int_field<T: TryFrom<i64>>(map: &Yaml, key: &str) -> Result<T> {

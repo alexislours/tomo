@@ -8,7 +8,8 @@ use owo_colors::OwoColorize;
 use saphyr::{LoadableYamlNode, Yaml};
 use tomolib::formats::amta::{Amta, ByteOrder, EnvelopePoint};
 
-use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, value};
+use crate::commands::yaml::{get, quote as yaml_quote};
+use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, order_str, value};
 use crate::hex;
 use crate::paths::{append_ext, read_file, strip_ext, write_file};
 
@@ -56,13 +57,6 @@ pub(crate) fn run(args: BamtaArgs) -> Result<()> {
 fn load(path: &Path) -> Result<Amta> {
     let bytes = read_file(path)?;
     Amta::parse(&bytes).with_context(|| format!("parse `{}`", path.display()))
-}
-
-fn order_str(order: ByteOrder) -> &'static str {
-    match order {
-        ByteOrder::Little => "little",
-        ByteOrder::Big => "big",
-    }
 }
 
 fn info(input: &Path, json: bool) -> Result<()> {
@@ -301,27 +295,6 @@ fn parse_yaml(text: &str) -> Result<Amta> {
         sections,
         trailing,
     })
-}
-
-fn yaml_quote(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn get<'a, 'b>(map: &'a Yaml<'b>, key: &str) -> Option<&'a Yaml<'b>> {
-    map.as_mapping()?
-        .iter()
-        .find(|(k, _)| k.as_str() == Some(key))
-        .map(|(_, v)| v)
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]

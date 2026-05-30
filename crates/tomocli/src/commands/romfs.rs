@@ -15,6 +15,7 @@ use tomolib::formats::{
     ainb::AINB_MAGIC,
     amta::AMTA_MAGIC,
     bars::BARS_MAGIC,
+    bfres::BFRES_MAGIC,
     bntx::BNTX_MAGIC,
     bwav::BWAV_MAGIC,
     byml::{BYML_MAGIC_BE, BYML_MAGIC_LE},
@@ -51,6 +52,7 @@ enum Kind {
     Bwav,
     Bnvib,
     Ainb,
+    Bfres,
 }
 
 impl Kind {
@@ -72,6 +74,7 @@ impl Kind {
                 &[0x10, 0, 0, 0, 0x03, 0],
             ],
             Self::Ainb => &[&AINB_MAGIC],
+            Self::Bfres => &[&BFRES_MAGIC],
         }
     }
 
@@ -96,6 +99,7 @@ impl Kind {
             Self::Bwav => "bwav",
             Self::Bnvib => "bnvib",
             Self::Ainb => "ainb",
+            Self::Bfres => "bfres",
         }
     }
 }
@@ -137,7 +141,8 @@ enum Verb {
         /// Convert known leaf formats to a text form (RESTBL to JSON; byml,
         /// msbt, msbp, ainb and bnvib to YAML). Containers are decomposed into
         /// directories: bntx/bwav into blob bundles, bars into per-asset bwav
-        /// bundles and bamta YAML sidecars. Converted files are written next to
+        /// bundles and bamta YAML sidecars, bfres into a container bundle with
+        /// glTF models. Converted files are written next to
         /// the original output path with the matching extension appended.
         /// Other formats are emitted as raw bytes.
         #[arg(long)]
@@ -438,7 +443,8 @@ fn process(
             | Kind::Bamta
             | Kind::Bwav
             | Kind::Bnvib
-            | Kind::Ainb,
+            | Kind::Ainb
+            | Kind::Bfres,
         )
         | None => {
             if !ctx.allows(kind) {
@@ -460,7 +466,7 @@ fn emit_leaf(
     if ctx.convert
         && let Some(k) = kind
     {
-        if matches!(k, Kind::Bntx | Kind::Bars | Kind::Bwav) {
+        if matches!(k, Kind::Bntx | Kind::Bars | Kind::Bwav | Kind::Bfres) {
             let started = Instant::now();
             let dir = append_ext(out_path, "d");
             let mut inner = super::bars::InnerConverts::default();
@@ -474,6 +480,8 @@ fn emit_leaf(
                     w
                 }
                 Kind::Bwav => super::bwav::convert_to_bundle(bytes, &dir, true)
+                    .with_context(|| format!("convert `{}`", out_path.display()))?,
+                Kind::Bfres => super::bfres::convert_to_bundle(bytes, &dir, true)
                     .with_context(|| format!("convert `{}`", out_path.display()))?,
                 _ => unreachable!(),
             };
@@ -524,7 +532,7 @@ fn convert_leaf(
         Kind::Ainb => super::ainb::convert_bytes_to_yaml(bytes).map(|b| Some((b, "yml"))),
         Kind::Bnvib => super::bnvib::convert_to_yaml(bytes).map(|b| Some((b, "yml"))),
         Kind::Bamta => super::bamta::convert_to_yaml(bytes).map(|b| Some((b, "yml"))),
-        Kind::Bntx | Kind::Sarc | Kind::Zs | Kind::Bars | Kind::Bwav => Ok(None),
+        Kind::Bntx | Kind::Sarc | Kind::Zs | Kind::Bars | Kind::Bwav | Kind::Bfres => Ok(None),
     }
 }
 
@@ -599,6 +607,7 @@ mod tests {
             Some(Kind::Bnvib)
         );
         assert_eq!(Kind::detect(&with_magic(&AINB_MAGIC)), Some(Kind::Ainb));
+        assert_eq!(Kind::detect(&with_magic(&BFRES_MAGIC)), Some(Kind::Bfres));
     }
 
     #[test]
@@ -660,6 +669,7 @@ mod tests {
             Kind::Bwav,
             Kind::Bnvib,
             Kind::Ainb,
+            Kind::Bfres,
         ] {
             let parsed = <Kind as ValueEnum>::from_str(kind.name(), false);
             assert_eq!(parsed, Ok(kind), "name `{}` should parse back", kind.name());

@@ -1,6 +1,7 @@
 pub mod ainb;
 pub mod amta;
 pub mod bars;
+pub mod bfres;
 pub mod binio;
 pub mod bntx;
 pub mod bnvib;

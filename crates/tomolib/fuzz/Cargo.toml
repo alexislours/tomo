@@ -28,6 +28,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bfres"
+path = "fuzz_targets/bfres.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bntx"
 path = "fuzz_targets/bntx.rs"
 test = false

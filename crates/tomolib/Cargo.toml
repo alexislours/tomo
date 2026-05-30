@@ -21,6 +21,7 @@ zstd.workspace = true
 saphyr.workspace = true
 base64.workspace = true
 ryu.workspace = true
+half.workspace = true
 png = { workspace = true, optional = true }
 texture2ddecoder = { workspace = true, optional = true }
 squish = { workspace = true, optional = true }

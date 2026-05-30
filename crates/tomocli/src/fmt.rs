@@ -7,8 +7,20 @@ use tabled::Table;
 use tabled::builder::Builder;
 use tabled::settings::object::Columns;
 use tabled::settings::{Alignment, Modify, Padding, Style};
+use tomolib::formats::binio::ByteOrder;
 
 const UNITS: [&str; 5] = ["bytes", "KiB", "MiB", "GiB", "TiB"];
+
+pub(crate) fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
+}
+
+pub(crate) fn order_str(order: ByteOrder) -> &'static str {
+    match order {
+        ByteOrder::Little => "little",
+        ByteOrder::Big => "big",
+    }
+}
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InfoArgs {

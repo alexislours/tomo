@@ -66,6 +66,7 @@ tomo sarc pack some.byml.yml --out some.byml
 | `.msbt`                                      |   ✓    |     ✓     |   ✓    |
 | `.msbp`                                      |   ✓    |     ✓     |   ✓    |
 | `.bntx`                                      |   ✓    |     ✓     |   ✓    |
+| `.bfres`                                     |   ✓    |     ✓     |   ✓    |
 | `.bwav`                                      |   ✓    |     ✓     |   ✓    |
 | `.bnvib`                                     |   ✓    |     ✓     |   ✓    |
 | `.bars`                                      |   ✓    |     ✓     |   ✓    |

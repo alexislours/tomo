@@ -9,7 +9,7 @@ use tabled::settings::{Padding, Style};
 use tomolib::formats::binio::ByteOrder;
 use tomolib::formats::bntx::{Bntx, ImageFormat, Platform, Texture, TextureInfo, image};
 
-use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, value};
+use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, plural, value};
 use crate::paths::{append_ext, read_file, write_file};
 
 #[derive(Debug, Args)]
@@ -185,10 +185,6 @@ fn texture_summary(tex: &Texture) -> String {
         tex.info.mip_count,
         plural(usize::from(tex.info.mip_count)),
     )
-}
-
-fn plural(n: usize) -> &'static str {
-    if n == 1 { "" } else { "s" }
 }
 
 fn print_texture_detail(i: usize, tex: &Texture) {

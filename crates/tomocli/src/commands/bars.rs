@@ -13,6 +13,7 @@ use tabled::builder::Builder;
 use tabled::settings::{Padding, Style};
 use tomolib::formats::bars::{self, Bars, ByteOrder, PackEntry};
 
+use crate::commands::yaml::{get, quote as yaml_quote};
 use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, value};
 use crate::hex;
 use crate::paths::{append_ext, read_file, write_file};
@@ -444,20 +445,6 @@ fn sanitize(name: &str) -> String {
         .collect()
 }
 
-fn yaml_quote(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
 struct EntryDoc {
     name: String,
     meta: String,
@@ -514,11 +501,4 @@ fn parse_manifest(text: &str) -> Result<Manifest> {
         reset_table,
         entries,
     })
-}
-
-fn get<'a, 'b>(map: &'a Yaml<'b>, key: &str) -> Option<&'a Yaml<'b>> {
-    map.as_mapping()?
-        .iter()
-        .find(|(k, _)| k.as_str() == Some(key))
-        .map(|(_, v)| v)
 }

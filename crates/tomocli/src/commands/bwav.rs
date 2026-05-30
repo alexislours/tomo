@@ -10,6 +10,7 @@ use tabled::builder::Builder;
 use tabled::settings::{Padding, Style};
 use tomolib::formats::bwav::{self, Bwav, BwavChannel, ByteOrder, PackChannel};
 
+use crate::commands::yaml::get;
 use crate::fmt::{extra_bytes, finish_info_table, fmt_bytes, label, value};
 use crate::paths::{append_ext, read_file, write_file};
 
@@ -401,13 +402,6 @@ fn parse_yaml(text: &str) -> Result<BwavDoc> {
         prefetch,
         channels,
     })
-}
-
-fn get<'a, 'b>(map: &'a Yaml<'b>, key: &str) -> Option<&'a Yaml<'b>> {
-    map.as_mapping()?
-        .iter()
-        .find(|(k, _)| k.as_str() == Some(key))
-        .map(|(_, v)| v)
 }
 
 fn as_int<T: TryFrom<i64>>(y: &Yaml) -> Result<T> {

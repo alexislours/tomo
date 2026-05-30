@@ -47,6 +47,8 @@ enum Command {
     Bamta(commands::bamta::BamtaArgs),
     /// Work with `.bars` (audio resource) archives.
     Bars(commands::bars::BarsArgs),
+    /// Work with `.bfres` (binary resource / 3D model) files.
+    Bfres(commands::bfres::BfresArgs),
     /// Work with `.bntx` (Switch texture) files.
     Bntx(commands::bntx::BntxArgs),
     /// Work with `.bnvib` (HD rumble vibration) files.
@@ -115,6 +117,7 @@ fn main() -> Result<()> {
         Command::Ainb(args) => commands::ainb::run(args),
         Command::Bamta(args) => commands::bamta::run(args),
         Command::Bars(args) => commands::bars::run(args),
+        Command::Bfres(args) => commands::bfres::run(args),
         Command::Bntx(args) => commands::bntx::run(args),
         Command::Bnvib(args) => commands::bnvib::run(args),
         Command::Bwav(args) => commands::bwav::run(args),

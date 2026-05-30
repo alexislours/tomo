@@ -1,6 +1,7 @@
 pub(crate) mod ainb;
 pub(crate) mod bamta;
 pub(crate) mod bars;
+pub(crate) mod bfres;
 pub(crate) mod bntx;
 pub(crate) mod bnvib;
 pub(crate) mod bwav;
@@ -13,4 +14,5 @@ pub(crate) mod nsp;
 pub(crate) mod romfs;
 pub(crate) mod rstbl;
 pub(crate) mod sarc;
+pub(crate) mod yaml;
 pub(crate) mod zs;

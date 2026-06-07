@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1](https://github.com/alexislours/tomo/compare/tomolib-v1.3.0...tomolib-v1.3.1) - 2026-06-07
+
+### Fixed
+
+- emit BNTX relocation entry for header data pointer
+
 ## [1.3.0](https://github.com/alexislours/tomo/compare/tomolib-v1.2.0...tomolib-v1.3.0) - 2026-05-30
 
 ### Added

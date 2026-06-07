@@ -133,6 +133,10 @@ pub(crate) fn write(bntx: &Bntx) -> Result<Vec<u8>> {
     let brtd = data_start - 0x10;
     w.pad_to(brtd);
     w.patch_u64(heads.data_ptr_at, brtd as u64);
+    w.ptrs.push(Ptr {
+        pos: heads.data_ptr_at,
+        in_data: true,
+    });
     w.raw(b"BRTD");
     w.u32(0);
     let brtd_size_at = w.pos();

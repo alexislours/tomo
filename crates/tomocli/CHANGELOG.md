@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0](https://github.com/alexislours/tomo/compare/tomocli-v1.5.1...tomocli-v1.6.0) - 2026-06-09
+
+### Added
+
+- add NSP RomFs extraction with BKTR update merging
+
 ## [1.5.1](https://github.com/alexislours/tomo/compare/tomocli-v1.5.0...tomocli-v1.5.1) - 2026-06-07
 
 ### Fixed

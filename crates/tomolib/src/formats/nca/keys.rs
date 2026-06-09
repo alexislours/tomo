@@ -66,6 +66,10 @@ impl KeySet {
         })
     }
 
+    pub fn add_title_key(&mut self, rights_id: [u8; 16], wrapped: [u8; 16]) {
+        self.title_keys.insert(rights_id, wrapped);
+    }
+
     #[must_use]
     pub(crate) fn header_ciphers(&self) -> (&Aes128Ecb, &Aes128Ecb) {
         (&self.header_data, &self.header_tweak)

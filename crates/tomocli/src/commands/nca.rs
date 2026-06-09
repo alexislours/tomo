@@ -20,7 +20,7 @@ pub(crate) struct NcaArgs {
 }
 
 #[derive(Debug, Args)]
-struct KeyOpts {
+pub(crate) struct KeyOpts {
     /// Path to `prod.keys`. Defaults to `$HOME/.switch/prod.keys`.
     #[arg(short, long, global = true, env = "TOMO_KEYS")]
     keys: Option<PathBuf>,
@@ -83,7 +83,7 @@ pub(crate) fn run(args: NcaArgs) -> Result<()> {
     }
 }
 
-fn load_keys(opts: &KeyOpts) -> Result<KeySet> {
+pub(crate) fn load_keys(opts: &KeyOpts) -> Result<KeySet> {
     let prod_path = opts.keys.clone().or_else(default_prod_keys).context(
         "could not locate prod.keys; pass --keys or set $TOMO_KEYS / ~/.switch/prod.keys",
     )?;

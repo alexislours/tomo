@@ -1,5 +1,6 @@
 mod crypto;
 mod keys;
+mod patch;
 mod romfs;
 mod verify;
 
@@ -10,7 +11,23 @@ use crate::formats::nsp::PartitionFs;
 use crate::{Error, Result};
 
 pub use crate::formats::nca::keys::KeySet;
+pub use crate::formats::nca::patch::{PatchStream, Tables};
 pub use crate::formats::nca::romfs::FsEntry;
+
+#[must_use]
+pub fn parse_ticket(bytes: &[u8]) -> Option<([u8; 16], [u8; 16])> {
+    let key = bytes.get(0x180..0x190)?;
+    let rights_id = bytes.get(0x2A0..0x2B0)?;
+    let mut k = [0u8; 16];
+    let mut r = [0u8; 16];
+    k.copy_from_slice(key);
+    r.copy_from_slice(rights_id);
+    Some((r, k))
+}
+
+pub fn romfs_entries<S: Read + Seek>(stream: &mut S) -> Result<Vec<FsEntry>> {
+    romfs::list(stream)
+}
 
 const SECTOR_SIZE: usize = 0x200;
 const HEADER_SECTORS: usize = 6;
@@ -186,6 +203,19 @@ pub struct Partition {
     pub fs_size: u64,
     ctr_base: [u8; 16],
     hash_meta: verify::HashMeta,
+    patch_info: Option<patch::PatchInfo>,
+}
+
+impl Partition {
+    #[must_use]
+    pub fn is_romfs(&self) -> bool {
+        matches!(self.format, FormatType::RomFs)
+    }
+
+    #[must_use]
+    pub fn is_patch(&self) -> bool {
+        self.patch_info.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -357,6 +387,83 @@ impl Nca {
         }
     }
 
+    #[must_use]
+    pub fn program_id(&self) -> u64 {
+        self.header.program_id
+    }
+
+    #[must_use]
+    pub fn romfs_partition(&self) -> Option<&Partition> {
+        self.partitions.iter().find(|p| p.is_romfs())
+    }
+
+    pub fn patch_tables<R: Read + Seek>(&self, reader: &mut R, part: &Partition) -> Result<Tables> {
+        let key = self
+            .content_key
+            .ok_or_else(|| Error::unsupported("patch NCA content key was not determined"))?;
+        let info = part
+            .patch_info
+            .ok_or_else(|| Error::unsupported("partition is not a BKTR patch section"))?;
+
+        let indirect = read_section_ctr(
+            reader,
+            &key,
+            &part.ctr_base,
+            part.offset + info.indirect_offset,
+            info.indirect_size,
+        )?;
+        let aes_ctr_ex = read_section_ctr(
+            reader,
+            &key,
+            &part.ctr_base,
+            part.offset + info.aes_ctr_ex_offset,
+            info.aes_ctr_ex_size,
+        )?;
+        Tables::parse(&indirect, &aes_ctr_ex)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn patch_stream<'a, P: Read + Seek, B: Read + Seek>(
+        &'a self,
+        tables: &'a Tables,
+        patch_reader: &'a mut P,
+        patch_part: &Partition,
+        base: &Nca,
+        base_reader: &'a mut B,
+        base_part: &Partition,
+    ) -> Result<PatchStream<'a, P, B>> {
+        let patch_key = self
+            .content_key
+            .ok_or_else(|| Error::unsupported("patch NCA content key was not determined"))?;
+        let base_key = match base_part.enc_type {
+            EncryptionType::None => None,
+            EncryptionType::AesCtr => Some(
+                base.content_key
+                    .ok_or_else(|| Error::unsupported("base NCA content key was not determined"))?,
+            ),
+            other => {
+                return Err(Error::unsupported(format!(
+                    "base section encryption {} is not supported",
+                    other.name()
+                )));
+            }
+        };
+
+        Ok(PatchStream::new(
+            tables,
+            patch_reader,
+            base_reader,
+            patch_key,
+            patch_part.offset,
+            patch_part.ctr_base,
+            base_key,
+            base_part.offset,
+            base_part.ctr_base,
+            patch_part.fs_offset,
+            patch_part.fs_size,
+        ))
+    }
+
     pub fn copy_file<R: Read + Seek, W: io::Write>(
         &self,
         reader: &mut R,
@@ -378,6 +485,21 @@ impl Nca {
         }
         Ok(())
     }
+}
+
+fn read_section_ctr<R: Read + Seek>(
+    reader: &mut R,
+    key: &[u8; 16],
+    ctr_base: &[u8; 16],
+    abs: u64,
+    size: u64,
+) -> Result<Vec<u8>> {
+    let len = usize::try_from(size).map_err(|_| Error::malformed("bktr table too large"))?;
+    let mut buf = vec![0u8; len];
+    reader.seek(SeekFrom::Start(abs))?;
+    reader.read_exact(&mut buf)?;
+    ctr_apply(key, ctr_base, abs, &mut buf);
+    Ok(buf)
 }
 
 fn resolve_content_key(
@@ -438,6 +560,12 @@ fn parse_partition(index: usize, offset: u64, size: u64, fs_header: &[u8]) -> Re
         }
     };
 
+    let patch_info = if enc_type == EncryptionType::AesCtrEx {
+        patch::PatchInfo::parse(fs_header)
+    } else {
+        None
+    };
+
     Ok(Partition {
         index,
         offset,
@@ -449,6 +577,7 @@ fn parse_partition(index: usize, offset: u64, size: u64, fs_header: &[u8]) -> Re
         fs_size,
         ctr_base,
         hash_meta,
+        patch_info,
     })
 }
 

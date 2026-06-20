@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0](https://github.com/alexislours/tomo/compare/tomocli-v1.6.0...tomocli-v1.7.0) - 2026-06-20
+
+### Added
+
+- resolve BNTX channel swizzle on decode
+
 ## [1.6.0](https://github.com/alexislours/tomo/compare/tomocli-v1.5.1...tomocli-v1.6.0) - 2026-06-09
 
 ### Added

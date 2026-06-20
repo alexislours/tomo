@@ -1,4 +1,4 @@
-use crate::formats::bntx::format::ChannelFormat;
+use crate::formats::bntx::format::{Channel, ChannelFormat};
 use crate::formats::bntx::{Texture, TextureInfo, swizzle};
 use crate::{Error, Result};
 
@@ -11,9 +11,26 @@ pub struct RgbaImage {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelResolve {
+    Raw,
+    Resolved,
+}
+
 /// Decodes one mip level of a texture to RGBA, un-swizzling and decompressing
-/// as needed.
+/// as needed. The raw stored channels are returned untouched; use
+/// [`decode_texture_rgba_with`] to apply the texture's channel selectors.
 pub fn decode_texture_rgba(tex: &Texture, mip: usize) -> Result<RgbaImage> {
+    decode_texture_rgba_with(tex, mip, ChannelResolve::Raw)
+}
+
+/// Decodes one mip level of a texture to RGBA, optionally resolving the
+/// texture's channel selectors (constants and swizzles) for an in-game view.
+pub fn decode_texture_rgba_with(
+    tex: &Texture,
+    mip: usize,
+    resolve: ChannelResolve,
+) -> Result<RgbaImage> {
     let info = &tex.info;
     let ch = info.format.channel().ok_or_else(|| {
         Error::unsupported(format!("BNTX: unknown image format {}", info.format.name()))
@@ -36,12 +53,32 @@ pub fn decode_texture_rgba(tex: &Texture, mip: usize) -> Result<RgbaImage> {
     let surface = mip_surface(info, ch, width, height);
     let linear = swizzle::convert(&surface, swizzled, swizzle::Direction::ToLinear)?;
 
-    let data = decode_blocks(ch, &linear, width, height)?;
+    let mut data = decode_blocks(ch, &linear, width, height)?;
+    if resolve == ChannelResolve::Resolved {
+        apply_channel_swizzle(&mut data, info);
+    }
     Ok(RgbaImage {
         width,
         height,
         data,
     })
+}
+
+fn apply_channel_swizzle(data: &mut [u8], info: &TextureInfo) {
+    let map = [
+        Channel::from_u8(info.channel_r),
+        Channel::from_u8(info.channel_g),
+        Channel::from_u8(info.channel_b),
+        Channel::from_u8(info.channel_a),
+    ];
+    for px in data.chunks_exact_mut(4) {
+        let rgba = [px[0], px[1], px[2], px[3]];
+        for (i, ch) in map.iter().enumerate() {
+            if let Some(v) = ch.select(rgba) {
+                px[i] = v;
+            }
+        }
+    }
 }
 
 fn mip_surface(info: &TextureInfo, ch: ChannelFormat, width: u32, height: u32) -> swizzle::Surface {
@@ -404,6 +441,40 @@ mod tests {
         };
         let back = decode_texture_rgba(&tex, 0).expect("decode");
         assert_eq!(back, img, "uncompressed should round-trip losslessly");
+    }
+
+    #[test]
+    fn channel_selectors_resolve_to_mask() {
+        let mut info = rgba8_info(4, 4);
+        info.channel_r = 1;
+        info.channel_g = 1;
+        info.channel_b = 1;
+        info.channel_a = 2;
+        let data: Vec<u8> = (0..4u32 * 4 * 4)
+            .map(|i| u8::try_from(i % 256).unwrap())
+            .collect();
+        let img = RgbaImage {
+            width: 4,
+            height: 4,
+            data: data.clone(),
+        };
+        let swizzled = encode_single_mip(&img, &info);
+        let tex = Texture {
+            name: "t".into(),
+            info,
+            mip_offsets: vec![0],
+            user_data: vec![],
+            image_data: swizzled,
+        };
+        let resolved = decode_texture_rgba_with(&tex, 0, ChannelResolve::Resolved).expect("decode");
+        for (px, src) in resolved.data.chunks_exact(4).zip(data.chunks_exact(4)) {
+            assert_eq!(px, &[255, 255, 255, src[0]]);
+        }
+        let raw = decode_texture_rgba(&tex, 0).expect("decode");
+        assert_eq!(
+            raw.data, data,
+            "without resolve the stored data is untouched"
+        );
     }
 
     #[test]

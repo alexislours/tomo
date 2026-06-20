@@ -41,6 +41,11 @@ enum Verb {
         /// Skip PNG previews (faster; the lossless `.bin` files are still written).
         #[arg(long)]
         no_preview: bool,
+        /// Decode previews from the raw stored channels instead of resolving the
+        /// texture's channel selectors. By default previews show the in-game view
+        /// (constants and channel swizzles applied).
+        #[arg(long)]
+        raw_channels: bool,
     },
     /// Rebuild a BNTX from a bundle directory (lossless, no original needed).
     Pack {
@@ -68,12 +73,18 @@ pub(crate) fn run(args: BntxArgs) -> Result<()> {
             input,
             out,
             no_preview,
+            raw_channels,
         } => {
             let dir = out.unwrap_or_else(|| append_ext(&input, "d"));
             let bytes = read_file(&input)?;
             let bntx =
                 Bntx::parse(&bytes).with_context(|| format!("parse `{}`", input.display()))?;
-            let n = write_bundle(&bntx, &dir, !no_preview)?;
+            let resolve = if raw_channels {
+                image::ChannelResolve::Raw
+            } else {
+                image::ChannelResolve::Resolved
+            };
+            let n = write_bundle(&bntx, &dir, !no_preview, resolve)?;
             crate::fmt::report(
                 "extracted",
                 &input,
@@ -217,7 +228,12 @@ fn print_texture_detail(i: usize, tex: &Texture) {
     println!("{tt}");
 }
 
-pub(crate) fn write_bundle(bntx: &Bntx, dir: &Path, preview: bool) -> Result<usize> {
+pub(crate) fn write_bundle(
+    bntx: &Bntx,
+    dir: &Path,
+    preview: bool,
+    resolve: image::ChannelResolve,
+) -> Result<usize> {
     std::fs::create_dir_all(dir).with_context(|| format!("create `{}`", dir.display()))?;
     let stems = unique_stems(&bntx.textures);
     let with_user_data: Vec<&str> = bntx
@@ -239,7 +255,7 @@ pub(crate) fn write_bundle(bntx: &Bntx, dir: &Path, preview: bool) -> Result<usi
     for (tex, stem) in bntx.textures.iter().zip(&stems) {
         write_file(&dir.join(format!("{stem}.bin")), &tex.image_data)?;
         if preview
-            && let Ok(img) = image::decode_texture_rgba(tex, 0)
+            && let Ok(img) = image::decode_texture_rgba_with(tex, 0, resolve)
             && let Ok(png) = image::rgba_to_png(&img)
         {
             write_file(&dir.join(format!("{stem}.png")), &png)?;
@@ -476,7 +492,7 @@ impl Manifest {
 
 pub(crate) fn convert_to_bundle(bytes: &[u8], out_dir: &Path, preview: bool) -> Result<u64> {
     let bntx = Bntx::parse(bytes)?;
-    write_bundle(&bntx, out_dir, preview)?;
+    write_bundle(&bntx, out_dir, preview, image::ChannelResolve::Resolved)?;
     let mut total = 0u64;
     if let Ok(rd) = std::fs::read_dir(out_dir) {
         for e in rd.flatten() {

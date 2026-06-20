@@ -10,7 +10,7 @@ mod write;
 use crate::formats::binio::{ByteOrder, align_up};
 use crate::{Error, Result};
 
-pub use format::{ChannelFormat, ImageFormat, TypeFormat};
+pub use format::{Channel, ChannelFormat, ImageFormat, TypeFormat};
 
 pub const BNTX_MAGIC: [u8; 4] = *b"BNTX";
 

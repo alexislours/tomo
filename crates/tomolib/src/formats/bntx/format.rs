@@ -56,6 +56,45 @@ impl TypeFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Channel {
+    Zero,
+    One,
+    Red,
+    Green,
+    Blue,
+    Alpha,
+    Unknown(u8),
+}
+
+impl Channel {
+    #[must_use]
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Self::Zero,
+            1 => Self::One,
+            2 => Self::Red,
+            3 => Self::Green,
+            4 => Self::Blue,
+            5 => Self::Alpha,
+            other => Self::Unknown(other),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn select(self, rgba: [u8; 4]) -> Option<u8> {
+        Some(match self {
+            Self::Zero => 0,
+            Self::One => u8::MAX,
+            Self::Red => rgba[0],
+            Self::Green => rgba[1],
+            Self::Blue => rgba[2],
+            Self::Alpha => rgba[3],
+            Self::Unknown(_) => return None,
+        })
+    }
+}
+
 /// The channel layout / block compression of an image format (the high bits of
 /// a packed [`ImageFormat`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

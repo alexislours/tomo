@@ -41,11 +41,96 @@ pub(crate) fn type_from_name(s: &str) -> Option<u8> {
     })
 }
 
+#[must_use]
+fn type_size(ty: u8) -> usize {
+    match ty {
+        0 | 3 | 9 => 1,
+        1 | 4 => 2,
+        2 | 5 | 6 => 4,
+        7 => 8,
+        _ => 0,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttrValue {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    F32(f32),
+    F64(f64),
+    Enum { index: u8, label: Option<String> },
+}
+
+fn decode_attr_value(b: &[u8], off: usize, ty: u8, list: &[String]) -> Option<AttrValue> {
+    let need = type_size(ty);
+    if need == 0 || off.checked_add(need).is_none_or(|end| end > b.len()) {
+        return None;
+    }
+    let u16v = || u16::from_le_bytes([b[off], b[off + 1]]);
+    let u32v = || u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]]);
+    Some(match ty {
+        0 => AttrValue::U8(b[off]),
+        3 => AttrValue::I8(b[off].cast_signed()),
+        1 => AttrValue::U16(u16v()),
+        4 => AttrValue::I16(u16v().cast_signed()),
+        2 => AttrValue::U32(u32v()),
+        5 => AttrValue::I32(u32v().cast_signed()),
+        6 => AttrValue::F32(f32::from_bits(u32v())),
+        7 => AttrValue::F64(f64::from_bits(u64::from_le_bytes([
+            b[off],
+            b[off + 1],
+            b[off + 2],
+            b[off + 3],
+            b[off + 4],
+            b[off + 5],
+            b[off + 6],
+            b[off + 7],
+        ]))),
+        9 => {
+            let index = b[off];
+            AttrValue::Enum {
+                index,
+                label: list.get(index as usize).cloned(),
+            }
+        }
+        _ => return None,
+    })
+}
+
 /// A named color from the project's color palette.
 #[derive(Debug, Clone)]
 pub struct Color {
     pub(crate) name: Option<String>,
     pub(crate) rgba: [u8; 4],
+}
+
+impl Color {
+    #[must_use]
+    pub fn new(name: Option<String>, rgba: [u8; 4]) -> Self {
+        Self { name, rgba }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+
+    #[must_use]
+    pub fn rgba(&self) -> [u8; 4] {
+        self.rgba
+    }
+
+    pub fn set_rgba(&mut self, rgba: [u8; 4]) {
+        self.rgba = rgba;
+    }
 }
 
 /// A message attribute definition (its type and where its value is stored).
@@ -57,12 +142,103 @@ pub struct Attribute {
     pub(crate) offset: u32,
 }
 
+impl Attribute {
+    #[must_use]
+    pub fn new(name: Option<String>, ty: u8, list_index: u16, offset: u32) -> Self {
+        Self {
+            name,
+            ty,
+            list_index,
+            offset,
+        }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+
+    #[must_use]
+    pub fn ty(&self) -> u8 {
+        self.ty
+    }
+
+    pub fn set_ty(&mut self, ty: u8) {
+        self.ty = ty;
+    }
+
+    #[must_use]
+    pub fn type_name(&self) -> &'static str {
+        type_name(self.ty)
+    }
+
+    #[must_use]
+    pub fn list_index(&self) -> u16 {
+        self.list_index
+    }
+
+    pub fn set_list_index(&mut self, list_index: u16) {
+        self.list_index = list_index;
+    }
+
+    #[must_use]
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    pub fn set_offset(&mut self, offset: u32) {
+        self.offset = offset;
+    }
+}
+
 /// A named group of control tags.
 #[derive(Debug, Clone)]
 pub struct TagGroup {
     pub(crate) id: u16,
     pub(crate) tag_indices: Vec<u16>,
     pub(crate) name: String,
+}
+
+impl TagGroup {
+    #[must_use]
+    pub fn new(id: u16, tag_indices: Vec<u16>, name: impl Into<String>) -> Self {
+        Self {
+            id,
+            tag_indices,
+            name: name.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn id(&self) -> u16 {
+        self.id
+    }
+
+    pub fn set_id(&mut self, id: u16) {
+        self.id = id;
+    }
+
+    #[must_use]
+    pub fn tag_indices(&self) -> &[u16] {
+        &self.tag_indices
+    }
+
+    pub fn tag_indices_mut(&mut self) -> &mut Vec<u16> {
+        &mut self.tag_indices
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
+    }
 }
 
 /// A control tag and the parameters it accepts.
@@ -72,6 +248,34 @@ pub struct Tag {
     pub(crate) name: String,
 }
 
+impl Tag {
+    #[must_use]
+    pub fn new(param_indices: Vec<u16>, name: impl Into<String>) -> Self {
+        Self {
+            param_indices,
+            name: name.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn param_indices(&self) -> &[u16] {
+        &self.param_indices
+    }
+
+    pub fn param_indices_mut(&mut self) -> &mut Vec<u16> {
+        &mut self.param_indices
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
+    }
+}
+
 /// A parameter of a control tag.
 #[derive(Debug, Clone)]
 pub struct TagParam {
@@ -79,6 +283,50 @@ pub struct TagParam {
     pub(crate) pad: u8,
     pub(crate) list_indices: Vec<u16>,
     pub(crate) name: String,
+}
+
+impl TagParam {
+    #[must_use]
+    pub fn new(ty: u8, list_indices: Vec<u16>, name: impl Into<String>) -> Self {
+        Self {
+            ty,
+            pad: 0,
+            list_indices,
+            name: name.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn ty(&self) -> u8 {
+        self.ty
+    }
+
+    pub fn set_ty(&mut self, ty: u8) {
+        self.ty = ty;
+    }
+
+    #[must_use]
+    pub fn type_name(&self) -> &'static str {
+        type_name(self.ty)
+    }
+
+    #[must_use]
+    pub fn list_indices(&self) -> &[u16] {
+        &self.list_indices
+    }
+
+    pub fn list_indices_mut(&mut self) -> &mut Vec<u16> {
+        &mut self.list_indices
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
+    }
 }
 
 /// Per-section bookkeeping preserved so a file can be rewritten byte-for-byte.
@@ -98,6 +346,54 @@ impl Default for SecMeta {
             buckets: 0,
             pad: 0,
         }
+    }
+}
+
+impl SecMeta {
+    #[must_use]
+    pub fn new(reserved: [u8; 8], padding: u8, buckets: u32, pad: u16) -> Self {
+        Self {
+            reserved,
+            padding,
+            buckets,
+            pad,
+        }
+    }
+
+    #[must_use]
+    pub fn reserved(&self) -> [u8; 8] {
+        self.reserved
+    }
+
+    pub fn set_reserved(&mut self, reserved: [u8; 8]) {
+        self.reserved = reserved;
+    }
+
+    #[must_use]
+    pub fn padding(&self) -> u8 {
+        self.padding
+    }
+
+    pub fn set_padding(&mut self, padding: u8) {
+        self.padding = padding;
+    }
+
+    #[must_use]
+    pub fn buckets(&self) -> u32 {
+        self.buckets
+    }
+
+    pub fn set_buckets(&mut self, buckets: u32) {
+        self.buckets = buckets;
+    }
+
+    #[must_use]
+    pub fn pad(&self) -> u16 {
+        self.pad
+    }
+
+    pub fn set_pad(&mut self, pad: u16) {
+        self.pad = pad;
     }
 }
 
@@ -149,6 +445,33 @@ fn count_offsets(b: &[u8]) -> Result<(u16, Vec<usize>)> {
 }
 
 impl Msbp {
+    #[must_use]
+    pub fn decode_attributes(&self, record: &[u8]) -> Vec<(Option<String>, AttrValue)> {
+        let mut out = Vec::with_capacity(self.attributes.len());
+        for a in &self.attributes {
+            let off = a.offset as usize;
+            if a.ty == 8
+                || off
+                    .checked_add(type_size(a.ty))
+                    .is_none_or(|end| end > record.len())
+            {
+                continue;
+            }
+            let list = if a.ty == 9 {
+                self.attribute_lists
+                    .get(a.list_index as usize)
+                    .map_or(&[][..], Vec::as_slice)
+            } else {
+                &[][..]
+            };
+            let Some(val) = decode_attr_value(record, off, a.ty, list) else {
+                continue;
+            };
+            out.push((a.name.clone(), val));
+        }
+        out
+    }
+
     /// Parses an MSBP file.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let (header, count) = Header::parse(bytes, MSBP_MAGIC)?;

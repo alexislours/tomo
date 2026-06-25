@@ -22,6 +22,31 @@ impl Default for SecMeta {
     }
 }
 
+impl SecMeta {
+    #[must_use]
+    pub fn new(reserved: [u8; 8], padding: u8) -> Self {
+        Self { reserved, padding }
+    }
+
+    #[must_use]
+    pub fn reserved(&self) -> [u8; 8] {
+        self.reserved
+    }
+
+    pub fn set_reserved(&mut self, reserved: [u8; 8]) {
+        self.reserved = reserved;
+    }
+
+    #[must_use]
+    pub fn padding(&self) -> u8 {
+        self.padding
+    }
+
+    pub fn set_padding(&mut self, padding: u8) {
+        self.padding = padding;
+    }
+}
+
 /// A single message: its label, style index, attribute bytes, and encoded text.
 #[derive(Debug, Clone)]
 pub struct Message {
@@ -29,6 +54,77 @@ pub struct Message {
     pub(crate) style: u32,
     pub(crate) attr: Vec<u8>,
     pub(crate) text: Vec<u8>,
+}
+
+impl Message {
+    #[must_use]
+    pub fn new(label: impl Into<String>, style: u32, attr: Vec<u8>, text: Vec<u8>) -> Self {
+        Self {
+            label: label.into(),
+            style,
+            attr,
+            text,
+        }
+    }
+
+    #[must_use]
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub fn set_label(&mut self, label: impl Into<String>) {
+        self.label = label.into();
+    }
+
+    #[must_use]
+    pub fn style(&self) -> u32 {
+        self.style
+    }
+
+    pub fn set_style(&mut self, style: u32) {
+        self.style = style;
+    }
+
+    #[must_use]
+    pub fn attr(&self) -> &[u8] {
+        &self.attr
+    }
+
+    pub fn attr_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.attr
+    }
+
+    pub fn set_attr(&mut self, attr: Vec<u8>) {
+        self.attr = attr;
+    }
+
+    #[must_use]
+    pub fn text(&self) -> &[u8] {
+        &self.text
+    }
+
+    pub fn text_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.text
+    }
+
+    pub fn set_text(&mut self, text: Vec<u8>) {
+        self.text = text;
+    }
+
+    #[must_use]
+    pub fn text_lossy(&self) -> String {
+        let units = self
+            .text
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]));
+        let mut out: String = char::decode_utf16(units)
+            .map(|r| r.unwrap_or('\u{FFFD}'))
+            .collect();
+        if out.ends_with('\0') {
+            out.pop();
+        }
+        out
+    }
 }
 
 /// A parsed MSBT message table.

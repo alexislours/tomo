@@ -15,6 +15,26 @@ pub struct Header {
 }
 
 impl Header {
+    #[must_use]
+    pub fn new(encoding: u8, version: u8) -> Self {
+        Self {
+            reserved_a: [0, 0],
+            encoding,
+            version,
+            reserved_b: [0, 0],
+            reserved_tail: [0; 10],
+        }
+    }
+
+    #[must_use]
+    pub fn encoding(&self) -> u8 {
+        self.encoding
+    }
+
+    pub fn set_encoding(&mut self, encoding: u8) {
+        self.encoding = encoding;
+    }
+
     pub(crate) fn parse(bytes: &[u8], magic: [u8; 8]) -> Result<(Self, u16)> {
         if bytes.len() < 0x20 {
             return Err(Error::malformed("LMS file too small for header"));

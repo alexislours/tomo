@@ -1070,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "tomocli"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1090,7 +1090,7 @@ dependencies = [
 
 [[package]]
 name = "tomolib"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "aes",
  "base64",

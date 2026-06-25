@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0](https://github.com/alexislours/tomo/compare/tomocli-v1.7.0...tomocli-v1.8.0) - 2026-06-25
+
+### Added
+
+- add public accessors and value-decode helpers for LMS formats
+
 ## [1.7.0](https://github.com/alexislours/tomo/compare/tomocli-v1.6.0...tomocli-v1.7.0) - 2026-06-20
 
 ### Added

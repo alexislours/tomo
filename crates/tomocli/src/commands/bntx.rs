@@ -255,7 +255,7 @@ pub(crate) fn write_bundle(
     for (tex, stem) in bntx.textures.iter().zip(&stems) {
         write_file(&dir.join(format!("{stem}.bin")), &tex.image_data)?;
         if preview
-            && let Ok(img) = image::decode_texture_rgba_with(tex, 0, resolve)
+            && let Ok(img) = image::decode_texture_rgba_for(tex, 0, resolve, bntx.platform)
             && let Ok(png) = image::rgba_to_png(&img)
         {
             write_file(&dir.join(format!("{stem}.png")), &png)?;
@@ -282,10 +282,11 @@ fn read_bundle(dir: &Path, from_png: bool) -> Result<Bntx> {
         .collect();
     let mut bntx = manifest.into_bntx(dir)?;
     if from_png {
+        let platform = bntx.platform;
         let mut reencoded = 0usize;
         let mut skipped: Vec<String> = Vec::new();
         for (tex, stem) in bntx.textures.iter_mut().zip(&stems) {
-            match apply_png_edit(dir, tex, stem)? {
+            match apply_png_edit(dir, tex, stem, platform)? {
                 PngEdit::Reencoded => reencoded += 1,
                 PngEdit::NotEncodable => {
                     skipped.push(format!("{} ({})", tex.name, tex.info.format.name()));
@@ -316,7 +317,12 @@ enum PngEdit {
     NoPng,
 }
 
-fn apply_png_edit(dir: &Path, tex: &mut Texture, stem: &str) -> Result<PngEdit> {
+fn apply_png_edit(
+    dir: &Path,
+    tex: &mut Texture,
+    stem: &str,
+    platform: Platform,
+) -> Result<PngEdit> {
     let png_path = dir.join(format!("{stem}.png"));
     if !png_path.exists() {
         return Ok(PngEdit::NoPng);
@@ -327,7 +333,7 @@ fn apply_png_edit(dir: &Path, tex: &mut Texture, stem: &str) -> Result<PngEdit> 
     let png = std::fs::read(&png_path).with_context(|| format!("read `{}`", png_path.display()))?;
     let img =
         image::png_to_rgba(&png).with_context(|| format!("decode `{}`", png_path.display()))?;
-    let image_data = image::encode_mips_swizzled(&img, tex)
+    let image_data = image::encode_mips_swizzled_for(&img, tex, platform)
         .with_context(|| format!("re-encode `{}`", tex.name))?;
     tex.image_data = image_data;
     Ok(PngEdit::Reencoded)

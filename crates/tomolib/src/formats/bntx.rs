@@ -60,6 +60,10 @@ impl Platform {
             Self::Other(_) => "unknown",
         }
     }
+
+    pub(crate) fn rounds_linear_pitch(self) -> bool {
+        !matches!(self, Self::Gen | Self::Pc)
+    }
 }
 
 /// A typed array of user-metadata values attached to a texture.
@@ -126,19 +130,17 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub(crate) fn mip_byte_range(&self, mip: usize) -> (usize, usize) {
-        let to_usize = |o: u64| usize::try_from(o).ok();
-        let start = self
-            .mip_offsets
-            .get(mip)
-            .and_then(|&o| to_usize(o))
-            .unwrap_or(0);
-        let end = self
-            .mip_offsets
-            .get(mip + 1)
-            .and_then(|&o| to_usize(o))
-            .unwrap_or(self.image_data.len());
-        (start, end)
+    pub(crate) fn mip_byte_range(&self, mip: usize) -> Option<(usize, usize)> {
+        let start = match self.mip_offsets.get(mip) {
+            Some(&o) => usize::try_from(o).ok()?,
+            None if mip == 0 => 0,
+            None => return None,
+        };
+        let end = match self.mip_offsets.get(mip + 1) {
+            Some(&o) => usize::try_from(o).ok()?,
+            None => self.image_data.len(),
+        };
+        Some((start, end))
     }
 }
 

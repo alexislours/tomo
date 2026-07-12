@@ -1,22 +1,21 @@
 #[inline]
-fn round_up(n: u32, a: u32) -> u32 {
+fn round_up(n: u128, a: u128) -> u128 {
     n.div_ceil(a) * a
 }
 
 #[inline]
 fn block_linear_address(x: u32, y: u32, width: u32, bpp: u32, block_height: u32) -> u64 {
-    let width_in_gobs = (width * bpp).div_ceil(64);
-    let gob = u64::from((y / (8 * block_height)) * 512 * block_height * width_in_gobs)
-        + u64::from((x * bpp / 64) * 512 * block_height)
-        + u64::from((y % (8 * block_height) / 8) * 512);
-    let xb = x * bpp;
-    gob + u64::from(
-        ((xb % 64) / 32) * 256
-            + ((y % 8) / 2) * 64
-            + ((xb % 32) / 16) * 32
-            + (y % 2) * 16
-            + (xb % 16),
-    )
+    let bh = u64::from(block_height);
+    let width_in_gobs = (u64::from(width) * u64::from(bpp)).div_ceil(64);
+    let gob = u64::from(y / (8 * block_height)) * 512 * bh * width_in_gobs
+        + u64::from(x) * u64::from(bpp) / 64 * 512 * bh
+        + u64::from(y % (8 * block_height) / 8) * 512;
+    let xb = u64::from(x) * u64::from(bpp);
+    gob + ((xb % 64) / 32) * 256
+        + u64::from((y % 8) / 2) * 64
+        + ((xb % 32) / 16) * 32
+        + u64::from(y % 2) * 16
+        + (xb % 16)
 }
 
 #[must_use]
@@ -27,17 +26,20 @@ pub(crate) fn swizzled_surface_size(
     block_height: u32,
     linear: bool,
     round_pitch: bool,
-) -> usize {
-    if linear {
-        let mut pitch = width_blocks * bpp;
-        if round_pitch {
-            pitch = round_up(pitch, 32);
-        }
-        (pitch * height_blocks) as usize
+) -> Option<usize> {
+    let width_bytes = u128::from(width_blocks) * u128::from(bpp);
+    let size = if linear {
+        let pitch = if round_pitch {
+            round_up(width_bytes, 32)
+        } else {
+            width_bytes
+        };
+        pitch * u128::from(height_blocks)
     } else {
-        let pitch = round_up(width_blocks * bpp, 64);
-        (pitch * round_up(height_blocks, block_height * 8)) as usize
-    }
+        round_up(width_bytes, 64)
+            * round_up(u128::from(height_blocks), u128::from(block_height) * 8)
+    };
+    usize::try_from(size).ok()
 }
 
 #[must_use]
@@ -58,6 +60,7 @@ pub(crate) struct Surface {
     pub(crate) bpp: u32,
     pub(crate) tile_mode: u16,
     pub(crate) block_height: u32,
+    pub(crate) round_pitch: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,12 +78,12 @@ pub(crate) fn convert(surface: &Surface, data: &[u8], dir: Direction) -> crate::
         bpp,
         tile_mode,
         block_height,
+        round_pitch,
     } = *surface;
     let to_swizzle = dir == Direction::ToSwizzled;
     let width_blocks = width.div_ceil(blk_width);
     let height_blocks = height.div_ceil(blk_height);
     let linear = tile_mode == 1;
-    let round_pitch = linear;
 
     let surf_size = swizzled_surface_size(
         width_blocks,
@@ -89,8 +92,11 @@ pub(crate) fn convert(surface: &Surface, data: &[u8], dir: Direction) -> crate::
         block_height,
         linear,
         round_pitch,
-    );
-    let linear_size = (width_blocks * height_blocks * bpp) as usize;
+    )
+    .ok_or_else(|| crate::Error::overflow("BNTX: surface size exceeds addressable range"))?;
+    let linear_size =
+        usize::try_from(u128::from(width_blocks) * u128::from(height_blocks) * u128::from(bpp))
+            .map_err(|_| crate::Error::overflow("BNTX: surface size exceeds addressable range"))?;
 
     let src_size = if to_swizzle { linear_size } else { surf_size };
     if data.len() < src_size {
@@ -104,8 +110,8 @@ pub(crate) fn convert(surface: &Surface, data: &[u8], dir: Direction) -> crate::
 
     let bpp_us = bpp as usize;
     let pitch = if linear {
-        let p = width_blocks * bpp;
-        if round_pitch { round_up(p, 32) } else { p }
+        let p = u64::from(width_blocks) * u64::from(bpp);
+        if round_pitch { p.div_ceil(32) * 32 } else { p }
     } else {
         0
     };
@@ -115,12 +121,16 @@ pub(crate) fn convert(surface: &Surface, data: &[u8], dir: Direction) -> crate::
     for y in 0..height_blocks {
         for x in 0..width_blocks {
             let swizzled = if linear {
-                (y * pitch + x * bpp) as usize
+                usize::try_from(u64::from(y) * pitch + u64::from(x) * u64::from(bpp))
+                    .unwrap_or(usize::MAX)
             } else {
                 usize::try_from(block_linear_address(x, y, width_blocks, bpp, block_height))
                     .unwrap_or(usize::MAX)
             };
-            let row_major = ((y * width_blocks + x) * bpp) as usize;
+            let row_major = usize::try_from(
+                (u64::from(y) * u64::from(width_blocks) + u64::from(x)) * u64::from(bpp),
+            )
+            .unwrap_or(usize::MAX);
 
             let (src, dst, base) = if to_swizzle {
                 (row_major, swizzled, surf_size)
@@ -154,10 +164,56 @@ mod tests {
             bpp,
             tile_mode: 0,
             block_height,
+            round_pitch: false,
         };
         let swizzled = convert(&surface, &linear, Direction::ToSwizzled).unwrap();
         let back = convert(&surface, &swizzled, Direction::ToLinear).unwrap();
         assert_eq!(back, linear);
+    }
+
+    #[test]
+    fn linear_tight_pitch_is_identity() {
+        let surface = Surface {
+            width: 6,
+            height: 6,
+            blk_width: 1,
+            blk_height: 1,
+            bpp: 4,
+            tile_mode: 1,
+            block_height: 1,
+            round_pitch: false,
+        };
+        let linear: Vec<u8> = (0..144u32).map(|i| (i % 251) as u8).collect();
+        let swizzled = convert(&surface, &linear, Direction::ToSwizzled).unwrap();
+        assert_eq!(swizzled, linear);
+
+        let rounded = Surface {
+            round_pitch: true,
+            ..surface
+        };
+        assert!(convert(&rounded, &linear, Direction::ToLinear).is_err());
+        let padded = convert(&rounded, &linear, Direction::ToSwizzled).unwrap();
+        assert_eq!(padded.len(), 192);
+        let back = convert(&rounded, &padded, Direction::ToLinear).unwrap();
+        assert_eq!(back, linear);
+    }
+
+    #[test]
+    fn convert_rejects_overflowing_dimensions() {
+        for tile_mode in [0u16, 1] {
+            let surface = Surface {
+                width: u32::MAX,
+                height: u32::MAX,
+                blk_width: 1,
+                blk_height: 1,
+                bpp: 4,
+                tile_mode,
+                block_height: 1,
+                round_pitch: tile_mode == 1,
+            };
+            assert!(convert(&surface, &[0u8; 64], Direction::ToLinear).is_err());
+            assert!(convert(&surface, &[0u8; 64], Direction::ToSwizzled).is_err());
+        }
     }
 
     #[test]
@@ -170,6 +226,7 @@ mod tests {
             bpp: 8,
             tile_mode: 0,
             block_height: 2,
+            round_pitch: false,
         };
         let too_short = vec![0u8; 16];
         assert!(convert(&surface, &too_short, Direction::ToLinear).is_err());

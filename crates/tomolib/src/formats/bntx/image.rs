@@ -1,5 +1,5 @@
 use crate::formats::bntx::format::{Channel, ChannelFormat};
-use crate::formats::bntx::{Texture, TextureInfo, swizzle};
+use crate::formats::bntx::{Platform, Texture, TextureInfo, swizzle};
 use crate::{Error, Result};
 
 /// A decoded image as tightly packed 8-bit RGBA pixels (`width * height * 4`
@@ -31,6 +31,15 @@ pub fn decode_texture_rgba_with(
     mip: usize,
     resolve: ChannelResolve,
 ) -> Result<RgbaImage> {
+    decode_texture_rgba_for(tex, mip, resolve, Platform::Nx)
+}
+
+pub fn decode_texture_rgba_for(
+    tex: &Texture,
+    mip: usize,
+    resolve: ChannelResolve,
+    platform: Platform,
+) -> Result<RgbaImage> {
     let info = &tex.info;
     let ch = info.format.channel().ok_or_else(|| {
         Error::unsupported(format!("BNTX: unknown image format {}", info.format.name()))
@@ -41,16 +50,18 @@ pub fn decode_texture_rgba_with(
         return Err(Error::out_of_range("BNTX mip", mip, mip_count));
     }
 
-    let width = (info.width >> mip).max(1);
-    let height = (info.height >> mip).max(1);
+    let width = mip_dim(info.width, mip);
+    let height = mip_dim(info.height, mip);
 
-    let (start, end) = tex.mip_byte_range(mip);
+    let (start, end) = tex
+        .mip_byte_range(mip)
+        .ok_or_else(|| Error::malformed("BNTX: mip offset out of range"))?;
     let swizzled = tex
         .image_data
         .get(start..end)
         .ok_or_else(|| Error::malformed("BNTX: mip offset out of range"))?;
 
-    let surface = mip_surface(info, ch, width, height);
+    let surface = mip_surface(info, ch, width, height, platform);
     let linear = swizzle::convert(&surface, swizzled, swizzle::Direction::ToLinear)?;
 
     let mut data = decode_blocks(ch, &linear, width, height)?;
@@ -62,6 +73,10 @@ pub fn decode_texture_rgba_with(
         height,
         data,
     })
+}
+
+fn mip_dim(base: u32, mip: usize) -> u32 {
+    if mip >= 32 { 1 } else { (base >> mip).max(1) }
 }
 
 fn apply_channel_swizzle(data: &mut [u8], info: &TextureInfo) {
@@ -81,7 +96,13 @@ fn apply_channel_swizzle(data: &mut [u8], info: &TextureInfo) {
     }
 }
 
-fn mip_surface(info: &TextureInfo, ch: ChannelFormat, width: u32, height: u32) -> swizzle::Surface {
+fn mip_surface(
+    info: &TextureInfo,
+    ch: ChannelFormat,
+    width: u32,
+    height: u32,
+    platform: Platform,
+) -> swizzle::Surface {
     let (blk_width, blk_height) = ch.block_dim();
     let base_block_height = 1u32 << info.block_height_log2();
     let block_height = swizzle::mip_block_height(height.div_ceil(blk_height), base_block_height);
@@ -93,6 +114,7 @@ fn mip_surface(info: &TextureInfo, ch: ChannelFormat, width: u32, height: u32) -
         bpp: ch.bytes_per_block(),
         tile_mode: info.tile_mode,
         block_height,
+        round_pitch: platform.rounds_linear_pitch(),
     }
 }
 
@@ -203,6 +225,14 @@ pub fn can_encode(info: &TextureInfo) -> bool {
 /// Encodes an RGBA image into `tex`'s format, swizzled and ready to replace the
 /// texture's image data. The image must match the texture's mip 0 dimensions.
 pub fn encode_mips_swizzled(img: &RgbaImage, tex: &Texture) -> Result<Vec<u8>> {
+    encode_mips_swizzled_for(img, tex, Platform::Nx)
+}
+
+pub fn encode_mips_swizzled_for(
+    img: &RgbaImage,
+    tex: &Texture,
+    platform: Platform,
+) -> Result<Vec<u8>> {
     let info = &tex.info;
     if (img.width, img.height) != (info.width, info.height) {
         return Err(Error::malformed(format!(
@@ -218,15 +248,17 @@ pub fn encode_mips_swizzled(img: &RgbaImage, tex: &Texture) -> Result<Vec<u8>> {
 
     let mut out = tex.image_data.clone();
     for mip in 0..info.mip_count.max(1) as usize {
-        let w = (info.width >> mip).max(1);
-        let h = (info.height >> mip).max(1);
+        let w = mip_dim(info.width, mip);
+        let h = mip_dim(info.height, mip);
         let level = downscale_box(img, w, h);
         let linear = encode_blocks(ch, &level, srgb)?;
 
-        let surface = mip_surface(info, ch, w, h);
+        let surface = mip_surface(info, ch, w, h, platform);
         let swizzled = swizzle::convert(&surface, &linear, swizzle::Direction::ToSwizzled)?;
 
-        let (start, end) = tex.mip_byte_range(mip);
+        let (start, end) = tex
+            .mip_byte_range(mip)
+            .ok_or_else(|| Error::malformed("BNTX: mip offset out of range"))?;
         let region = out
             .get_mut(start..end)
             .ok_or_else(|| Error::malformed("BNTX: mip offset out of range"))?;
@@ -406,7 +438,8 @@ mod tests {
             block_height,
             info.tile_mode == 1,
             info.tile_mode == 1,
-        );
+        )
+        .expect("surface size");
         let mut single = info.clone();
         single.mip_count = 1;
         let tex = Texture {
@@ -499,6 +532,71 @@ mod tests {
         };
         let back = decode_texture_rgba(&tex, 0).unwrap();
         assert_eq!((back.width, back.height), (64, 32));
+    }
+
+    fn linear_pitch_round_trip(platform: Platform, image_size: usize) {
+        let mut info = rgba8_info(6, 6);
+        info.tile_mode = 1;
+        info.texture_layout = 0;
+        info.image_size = u32::try_from(image_size).unwrap();
+        let img = RgbaImage {
+            width: 6,
+            height: 6,
+            data: (0..6u32 * 6 * 4)
+                .map(|i| u8::try_from(i % 256).unwrap())
+                .collect(),
+        };
+        let template = Texture {
+            name: "t".into(),
+            info,
+            mip_offsets: vec![0],
+            user_data: vec![],
+            image_data: vec![0u8; image_size],
+        };
+        let swizzled = encode_mips_swizzled_for(&img, &template, platform).expect("encode");
+        assert_eq!(swizzled.len(), image_size);
+        let tex = Texture {
+            image_data: swizzled,
+            ..template
+        };
+        let back = decode_texture_rgba_for(&tex, 0, ChannelResolve::Raw, platform).expect("decode");
+        assert_eq!(back, img);
+        assert_eq!(
+            decode_texture_rgba(&tex, 0).is_ok(),
+            platform == Platform::Nx,
+            "the NX default should only decode NX-pitch data"
+        );
+    }
+
+    #[test]
+    fn gen_linear_tight_pitch_round_trips() {
+        linear_pitch_round_trip(Platform::Gen, 6 * 6 * 4);
+    }
+
+    #[test]
+    fn nx_linear_rounded_pitch_round_trips() {
+        linear_pitch_round_trip(Platform::Nx, 32 * 6);
+    }
+
+    #[test]
+    fn oversized_mip_count_is_rejected() {
+        let mut info = rgba8_info(4, 4);
+        info.mip_count = 40;
+        let tex = Texture {
+            name: "t".into(),
+            info,
+            mip_offsets: vec![0],
+            user_data: vec![],
+            image_data: vec![0u8; 512],
+        };
+        assert!(decode_texture_rgba(&tex, 0).is_ok());
+        assert!(decode_texture_rgba(&tex, 33).is_err());
+        let img = RgbaImage {
+            width: 4,
+            height: 4,
+            data: vec![0u8; 4 * 4 * 4],
+        };
+        assert!(encode_mips_swizzled(&img, &tex).is_err());
     }
 
     #[test]

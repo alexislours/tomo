@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0](https://github.com/alexislours/tomo/compare/tomocli-v1.8.0...tomocli-v1.9.0) - 2026-07-12
+
+### Added
+
+- gen platform BNTX
+- R4G4B4A4 uncompressed decode and encode
+
 ## [1.8.0](https://github.com/alexislours/tomo/compare/tomocli-v1.7.0...tomocli-v1.8.0) - 2026-06-25
 
 ### Added

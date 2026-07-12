@@ -181,6 +181,15 @@ fn decode_uncompressed(ch: ChannelFormat, data: &[u8], px: usize) -> Result<Vec<
                     255,
                 ]
             }
+            ChannelFormat::R4G4B4A4 => {
+                let v = u16::from_le_bytes([src[0], src[1]]);
+                [
+                    expand(u32::from(v) & 0xF, 4),
+                    expand(u32::from(v >> 4) & 0xF, 4),
+                    expand(u32::from(v >> 8) & 0xF, 4),
+                    expand(u32::from(v >> 12) & 0xF, 4),
+                ]
+            }
             _ => {
                 return Err(Error::malformed(format!(
                     "BNTX: uncompressed format {} not yet supported for decode",
@@ -197,6 +206,12 @@ fn decode_uncompressed(ch: ChannelFormat, data: &[u8], px: usize) -> Result<Vec<
 fn expand(v: u32, bits: u32) -> u8 {
     let max = (1u32 << bits) - 1;
     u8::try_from((v * 255 + max / 2) / max).unwrap_or(255)
+}
+
+#[inline]
+fn quant(v: u8, bits: u32) -> u8 {
+    let max = (1u32 << bits) - 1;
+    u8::try_from((u32::from(v) * max + 127) / 255).unwrap_or(0)
 }
 
 /// Whether [`encode_mips_swizzled`] can produce data in this texture's format.
@@ -350,7 +365,11 @@ fn squish_format(ch: ChannelFormat) -> Option<squish::Format> {
 fn uncompressed_encodable(ch: ChannelFormat) -> bool {
     matches!(
         ch,
-        ChannelFormat::R8G8B8A8 | ChannelFormat::B8G8R8A8 | ChannelFormat::R8G8 | ChannelFormat::R8
+        ChannelFormat::R8G8B8A8
+            | ChannelFormat::B8G8R8A8
+            | ChannelFormat::R8G8
+            | ChannelFormat::R8
+            | ChannelFormat::R4G4B4A4
     )
 }
 
@@ -364,6 +383,13 @@ fn encode_uncompressed(ch: ChannelFormat, img: &RgbaImage) -> Result<Vec<u8>> {
             ChannelFormat::B8G8R8A8 => out.extend_from_slice(&[b, g, r, a]),
             ChannelFormat::R8G8 => out.extend_from_slice(&[r, g]),
             ChannelFormat::R8 => out.push(r),
+            ChannelFormat::R4G4B4A4 => {
+                let packed = u16::from(quant(r, 4))
+                    | u16::from(quant(g, 4)) << 4
+                    | u16::from(quant(b, 4)) << 8
+                    | u16::from(quant(a, 4)) << 12;
+                out.extend_from_slice(&packed.to_le_bytes());
+            }
             _ => {
                 return Err(Error::malformed(format!(
                     "BNTX: cannot encode to {} (try --raw)",
@@ -474,6 +500,29 @@ mod tests {
         };
         let back = decode_texture_rgba(&tex, 0).expect("decode");
         assert_eq!(back, img, "uncompressed should round-trip losslessly");
+    }
+
+    #[test]
+    fn rgba4_encode_decode_round_trips() {
+        let mut info = rgba8_info(32, 32);
+        info.format = crate::formats::bntx::ImageFormat::from_raw(0x0301);
+        info.image_size = 32 * 32 * 2;
+        let data: Vec<u8> = (0..32u32 * 32 * 4).map(|i| expand(i % 16, 4)).collect();
+        let img = RgbaImage {
+            width: 32,
+            height: 32,
+            data,
+        };
+        let swizzled = encode_single_mip(&img, &info);
+        let tex = Texture {
+            name: "t".into(),
+            info,
+            mip_offsets: vec![0],
+            user_data: vec![],
+            image_data: swizzled,
+        };
+        let back = decode_texture_rgba(&tex, 0).expect("decode");
+        assert_eq!(back, img, "4-bit-quantized values should round-trip");
     }
 
     #[test]

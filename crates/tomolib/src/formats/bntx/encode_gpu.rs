@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::formats::bntx::format::ChannelFormat;
 use crate::formats::bntx::image::RgbaImage;
 use crate::{Error, Result};
@@ -33,7 +35,39 @@ pub(crate) fn encode_astc(img: &RgbaImage, ch: ChannelFormat, srgb: bool) -> Res
     Ok(out)
 }
 
+/// Pads an image to whole 4x4 blocks by repeating its last row and column.
+fn padded_to_blocks(img: &RgbaImage) -> Cow<'_, RgbaImage> {
+    let (w, h) = (img.width.div_ceil(4) * 4, img.height.div_ceil(4) * 4);
+
+    if (w, h) == (img.width, img.height) {
+        return Cow::Borrowed(img);
+    }
+
+    let (src_row, dst_row) = (img.width as usize * 4, w as usize * 4);
+    let mut data = Vec::with_capacity(dst_row * h as usize);
+
+    for row in img.data.chunks_exact(src_row) {
+        data.extend_from_slice(row);
+
+        let last = &row[src_row - 4..];
+        for _ in img.width..w {
+            data.extend_from_slice(last);
+        }
+    }
+
+    for _ in img.height..h {
+        data.extend_from_within(data.len() - dst_row..);
+    }
+
+    Cow::Owned(RgbaImage {
+        width: w,
+        height: h,
+        data,
+    })
+}
+
 pub(crate) fn encode_bc4(img: &RgbaImage) -> Vec<u8> {
+    let img = padded_to_blocks(img);
     let r: Vec<u8> = img.data.chunks_exact(4).map(|p| p[0]).collect();
     let surf = intel_tex_2::RSurface {
         width: img.width,
@@ -45,6 +79,7 @@ pub(crate) fn encode_bc4(img: &RgbaImage) -> Vec<u8> {
 }
 
 pub(crate) fn encode_bc5(img: &RgbaImage) -> Vec<u8> {
+    let img = padded_to_blocks(img);
     let rg: Vec<u8> = img
         .data
         .chunks_exact(4)
@@ -60,6 +95,7 @@ pub(crate) fn encode_bc5(img: &RgbaImage) -> Vec<u8> {
 }
 
 pub(crate) fn encode_bc7(img: &RgbaImage) -> Vec<u8> {
+    let img = padded_to_blocks(img);
     let surf = intel_tex_2::RgbaSurface {
         width: img.width,
         height: img.height,

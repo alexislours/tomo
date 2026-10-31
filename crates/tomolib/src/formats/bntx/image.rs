@@ -41,6 +41,32 @@ pub fn decode_texture_rgba_for(
     platform: Platform,
 ) -> Result<RgbaImage> {
     let info = &tex.info;
+
+    let ch = info.format.channel().ok_or_else(|| {
+        Error::unsupported(format!("BNTX: unknown image format {}", info.format.name()))
+    })?;
+
+    let width = mip_dim(info.width, mip);
+    let height = mip_dim(info.height, mip);
+    let linear = linear_mip_data_for(tex, mip, platform)?;
+
+    let mut data = decode_blocks(ch, &linear, width, height)?;
+    if resolve == ChannelResolve::Resolved {
+        apply_channel_swizzle(&mut data, info);
+    }
+    Ok(RgbaImage {
+        width,
+        height,
+        data,
+    })
+}
+
+pub fn linear_mip_data(tex: &Texture, mip: usize) -> Result<Vec<u8>> {
+    linear_mip_data_for(tex, mip, Platform::Nx)
+}
+
+pub fn linear_mip_data_for(tex: &Texture, mip: usize, platform: Platform) -> Result<Vec<u8>> {
+    let info = &tex.info;
     let ch = info.format.channel().ok_or_else(|| {
         Error::unsupported(format!("BNTX: unknown image format {}", info.format.name()))
     })?;
@@ -62,17 +88,7 @@ pub fn decode_texture_rgba_for(
         .ok_or_else(|| Error::malformed("BNTX: mip offset out of range"))?;
 
     let surface = mip_surface(info, ch, width, height, platform);
-    let linear = swizzle::convert(&surface, swizzled, swizzle::Direction::ToLinear)?;
-
-    let mut data = decode_blocks(ch, &linear, width, height)?;
-    if resolve == ChannelResolve::Resolved {
-        apply_channel_swizzle(&mut data, info);
-    }
-    Ok(RgbaImage {
-        width,
-        height,
-        data,
-    })
+    swizzle::convert(&surface, swizzled, swizzle::Direction::ToLinear)
 }
 
 fn mip_dim(base: u32, mip: usize) -> u32 {
@@ -452,11 +468,12 @@ mod tests {
         }
     }
 
-    fn encode_single_mip(img: &RgbaImage, info: &TextureInfo) -> Vec<u8> {
+    pub(super) fn encode_single_mip(img: &RgbaImage, info: &TextureInfo) -> Vec<u8> {
         let ch = info.format.channel().expect("known format");
         let (bw, bh) = ch.block_dim();
         let block_height =
             swizzle::mip_block_height(info.height.div_ceil(bh), 1u32 << info.block_height_log2());
+
         let size = swizzle::swizzled_surface_size(
             info.width.div_ceil(bw),
             info.height.div_ceil(bh),
@@ -466,8 +483,10 @@ mod tests {
             info.tile_mode == 1,
         )
         .expect("surface size");
+
         let mut single = info.clone();
         single.mip_count = 1;
+
         let tex = Texture {
             name: "t".into(),
             info: single,
@@ -475,6 +494,7 @@ mod tests {
             user_data: vec![],
             image_data: vec![0u8; size],
         };
+
         encode_mips_swizzled(img, &tex).expect("encode")
     }
 
@@ -725,5 +745,55 @@ mod gpu_tests {
         check(0x2001, true);
         check(0x1f0a, false);
         check(0x1505, false);
+    }
+
+    #[test]
+    fn bc_encode_handles_partial_blocks() {
+        use crate::formats::bntx::ImageFormat;
+
+        let (w, h) = (550u32, 125u32);
+        let img = RgbaImage {
+            width: w,
+            height: h,
+            data: [128u8, 64, 32, 255].repeat((w * h) as usize),
+        };
+
+        for (raw, channels) in [(0x1d01, 1), (0x1e01, 2), (0x2001, 4)] {
+            let mut info = super::tests::rgba8_info(w, h);
+            info.format = ImageFormat::from_raw(raw);
+            let swizzled = super::tests::encode_single_mip(&img, &info);
+
+            let tex = Texture {
+                name: "t".into(),
+                info,
+                mip_offsets: vec![0],
+                user_data: vec![],
+                image_data: swizzled,
+            };
+
+            let name = tex.info.format.name();
+            let ch = tex.info.format.channel().expect("known format");
+            let linear = linear_mip_data(&tex, 0).expect("deswizzle");
+
+            assert_eq!(
+                linear.len(),
+                (w.div_ceil(4) * h.div_ceil(4) * ch.bytes_per_block()) as usize,
+                "{name}: one block per started 4x4 tile"
+            );
+
+            let back = decode_texture_rgba(&tex, 0).expect("decode");
+            assert_eq!((back.width, back.height), (w, h), "{name}");
+
+            for px in back.data.chunks_exact(4) {
+                for c in 0..channels {
+                    assert!(
+                        px[c].abs_diff(img.data[c]) <= 4,
+                        "{name}: channel {c} is {} instead of about {}",
+                        px[c],
+                        img.data[c]
+                    );
+                }
+            }
+        }
     }
 }

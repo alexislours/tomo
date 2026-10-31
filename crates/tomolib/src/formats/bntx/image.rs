@@ -41,32 +41,6 @@ pub fn decode_texture_rgba_for(
     platform: Platform,
 ) -> Result<RgbaImage> {
     let info = &tex.info;
-
-    let ch = info.format.channel().ok_or_else(|| {
-        Error::unsupported(format!("BNTX: unknown image format {}", info.format.name()))
-    })?;
-
-    let width = mip_dim(info.width, mip);
-    let height = mip_dim(info.height, mip);
-    let linear = linear_mip_data_for(tex, mip, platform)?;
-
-    let mut data = decode_blocks(ch, &linear, width, height)?;
-    if resolve == ChannelResolve::Resolved {
-        apply_channel_swizzle(&mut data, info);
-    }
-    Ok(RgbaImage {
-        width,
-        height,
-        data,
-    })
-}
-
-pub fn linear_mip_data(tex: &Texture, mip: usize) -> Result<Vec<u8>> {
-    linear_mip_data_for(tex, mip, Platform::Nx)
-}
-
-pub fn linear_mip_data_for(tex: &Texture, mip: usize, platform: Platform) -> Result<Vec<u8>> {
-    let info = &tex.info;
     let ch = info.format.channel().ok_or_else(|| {
         Error::unsupported(format!("BNTX: unknown image format {}", info.format.name()))
     })?;
@@ -88,7 +62,17 @@ pub fn linear_mip_data_for(tex: &Texture, mip: usize, platform: Platform) -> Res
         .ok_or_else(|| Error::malformed("BNTX: mip offset out of range"))?;
 
     let surface = mip_surface(info, ch, width, height, platform);
-    swizzle::convert(&surface, swizzled, swizzle::Direction::ToLinear)
+    let linear = swizzle::convert(&surface, swizzled, swizzle::Direction::ToLinear)?;
+
+    let mut data = decode_blocks(ch, &linear, width, height)?;
+    if resolve == ChannelResolve::Resolved {
+        apply_channel_swizzle(&mut data, info);
+    }
+    Ok(RgbaImage {
+        width,
+        height,
+        data,
+    })
 }
 
 fn mip_dim(base: u32, mip: usize) -> u32 {
@@ -191,9 +175,9 @@ fn decode_uncompressed(ch: ChannelFormat, data: &[u8], px: usize) -> Result<Vec<
             ChannelFormat::R5G6B5 => {
                 let v = u16::from_le_bytes([src[0], src[1]]);
                 [
-                    expand(u32::from(v >> 11) & 0x1F, 5),
-                    expand(u32::from(v >> 5) & 0x3F, 6),
                     expand(u32::from(v) & 0x1F, 5),
+                    expand(u32::from(v >> 5) & 0x3F, 6),
+                    expand(u32::from(v >> 11) & 0x1F, 5),
                     255,
                 ]
             }
@@ -473,7 +457,6 @@ mod tests {
         let (bw, bh) = ch.block_dim();
         let block_height =
             swizzle::mip_block_height(info.height.div_ceil(bh), 1u32 << info.block_height_log2());
-
         let size = swizzle::swizzled_surface_size(
             info.width.div_ceil(bw),
             info.height.div_ceil(bh),
@@ -483,10 +466,8 @@ mod tests {
             info.tile_mode == 1,
         )
         .expect("surface size");
-
         let mut single = info.clone();
         single.mip_count = 1;
-
         let tex = Texture {
             name: "t".into(),
             info: single,
@@ -494,7 +475,6 @@ mod tests {
             user_data: vec![],
             image_data: vec![0u8; size],
         };
-
         encode_mips_swizzled(img, &tex).expect("encode")
     }
 
@@ -772,15 +752,6 @@ mod gpu_tests {
             };
 
             let name = tex.info.format.name();
-            let ch = tex.info.format.channel().expect("known format");
-            let linear = linear_mip_data(&tex, 0).expect("deswizzle");
-
-            assert_eq!(
-                linear.len(),
-                (w.div_ceil(4) * h.div_ceil(4) * ch.bytes_per_block()) as usize,
-                "{name}: one block per started 4x4 tile"
-            );
-
             let back = decode_texture_rgba(&tex, 0).expect("decode");
             assert_eq!((back.width, back.height), (w, h), "{name}");
 

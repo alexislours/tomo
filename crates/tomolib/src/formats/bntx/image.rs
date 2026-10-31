@@ -175,9 +175,9 @@ fn decode_uncompressed(ch: ChannelFormat, data: &[u8], px: usize) -> Result<Vec<
             ChannelFormat::R5G6B5 => {
                 let v = u16::from_le_bytes([src[0], src[1]]);
                 [
-                    expand(u32::from(v >> 11) & 0x1F, 5),
-                    expand(u32::from(v >> 5) & 0x3F, 6),
                     expand(u32::from(v) & 0x1F, 5),
+                    expand(u32::from(v >> 5) & 0x3F, 6),
+                    expand(u32::from(v >> 11) & 0x1F, 5),
                     255,
                 ]
             }
@@ -452,7 +452,7 @@ mod tests {
         }
     }
 
-    fn encode_single_mip(img: &RgbaImage, info: &TextureInfo) -> Vec<u8> {
+    pub(super) fn encode_single_mip(img: &RgbaImage, info: &TextureInfo) -> Vec<u8> {
         let ch = info.format.channel().expect("known format");
         let (bw, bh) = ch.block_dim();
         let block_height =
@@ -725,5 +725,46 @@ mod gpu_tests {
         check(0x2001, true);
         check(0x1f0a, false);
         check(0x1505, false);
+    }
+
+    #[test]
+    fn bc_encode_handles_partial_blocks() {
+        use crate::formats::bntx::ImageFormat;
+
+        let (w, h) = (550u32, 125u32);
+        let img = RgbaImage {
+            width: w,
+            height: h,
+            data: [128u8, 64, 32, 255].repeat((w * h) as usize),
+        };
+
+        for (raw, channels) in [(0x1d01, 1), (0x1e01, 2), (0x2001, 4)] {
+            let mut info = super::tests::rgba8_info(w, h);
+            info.format = ImageFormat::from_raw(raw);
+            let swizzled = super::tests::encode_single_mip(&img, &info);
+
+            let tex = Texture {
+                name: "t".into(),
+                info,
+                mip_offsets: vec![0],
+                user_data: vec![],
+                image_data: swizzled,
+            };
+
+            let name = tex.info.format.name();
+            let back = decode_texture_rgba(&tex, 0).expect("decode");
+            assert_eq!((back.width, back.height), (w, h), "{name}");
+
+            for px in back.data.chunks_exact(4) {
+                for c in 0..channels {
+                    assert!(
+                        px[c].abs_diff(img.data[c]) <= 4,
+                        "{name}: channel {c} is {} instead of about {}",
+                        px[c],
+                        img.data[c]
+                    );
+                }
+            }
+        }
     }
 }
